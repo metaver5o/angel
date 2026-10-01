@@ -4,195 +4,248 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Angel · Guardian Set — mint</title>
+<meta name="color-scheme" content="light" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #14110d; --bg2: #1b1712; --card: #1e1a14; --line: #332a1f;
-    --ink: #ece3d4; --dim: #a4957f; --faint: #6e6253;
-    --copper: #e0682f; --copper2: #f3905a; --copper-ghost: #e0682f22;
-    --patina: #5bb394; --gold: #d9a441;
+    --bg: #fbf8f3;        /* warm paper */
+    --card: #ffffff;
+    --line: #e6ddd0;
+    --line-strong: #cdbfae;
+    --ink: #1c1712;
+    --dim: #6b5f52;
+    --faint: #a1958a;
+    --copper: #d4551c;
+    --copper-dark: #b8440f;
+    --copper-tint: #fdf0e8;
+    --green: #157a5b;
+    --green-tint: #e8f5ef;
+    --gold: #b7860b;
+    --gold-tint: #fbf3dc;
+    --red: #c0392b;
+    --red-tint: #fdecea;
     --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-    --sans: 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --radius: 14px;
   }
-  * , *::before, *::after { box-sizing: border-box }
+  *, *::before, *::after { box-sizing: border-box }
+  [hidden] { display: none !important }
+  html { background: var(--bg) }
   body {
     margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
-    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }
   a { color: var(--copper); text-decoration: none }
-  ::selection { background: var(--copper); color: #160f09 }
-  .wrap { max-width: 640px; margin: 0 auto; padding: 0 22px }
+  a:hover { text-decoration: underline }
+  ::selection { background: var(--copper); color: #fff }
+  button { font: inherit; color: inherit }
 
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 0; border-bottom: 1px solid var(--line); margin-bottom: 38px;
-  }
+  .wrap { width: 100%; max-width: 520px; margin: 0 auto; padding: 0 16px }
+
+  /* ── header ─────────────────────────────────────────────────────────── */
+  header { padding: 22px 0 6px }
   .brand { display: flex; align-items: center; gap: 12px }
-  .brand .glyph { width: 30px; height: 30px; flex: none }
-  .brand .name { font-family: var(--mono); font-weight: 600; letter-spacing: .04em; font-size: 15px }
-  .brand .name small { display: block; color: var(--faint); font-weight: 500; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase }
-
+  .brand .glyph { width: 40px; height: 40px; flex: none }
+  .brand .name { font-weight: 700; font-size: 18px; line-height: 1.15 }
+  .brand .name small { display: block; color: var(--dim); font-weight: 500; font-size: 12px; letter-spacing: .12em; text-transform: uppercase }
   .net-pill {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--patina); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--green); background: var(--green-tint); border-radius: 999px; padding: 4px 11px; white-space: nowrap;
+  }
+  .net-pill.off { color: var(--dim); background: #f1ece5 }
+
+  .hero { padding: 18px 0 10px }
+  .hero h1 { font-size: 28px; line-height: 1.2; font-weight: 700; margin: 0 0 8px; letter-spacing: -.01em }
+  .hero p { color: var(--dim); margin: 0; font-size: 15px }
+
+  /* ── cards: one column, everything stacked ──────────────────────────── */
+  main { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 12px;
+    box-shadow: 0 1px 2px #1c171208;
+  }
+  .card h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dim) }
+  .card h2 .n {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--copper); color: #fff; font-family: var(--mono); font-size: 12px; margin-right: 8px; vertical-align: -5px;
   }
 
-  .hero { margin-bottom: 34px }
-  .hero h1 { font-family: var(--mono); font-size: 24px; font-weight: 600; margin: 0 0 10px; letter-spacing: .01em }
-  .hero p { color: var(--dim); margin: 0; font-size: 14px }
+  /* generic stacked rows */
+  .rows { display: flex; flex-direction: column; gap: 8px }
+  .row {
+    display: flex; flex-direction: column; gap: 2px; padding: 11px 13px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+  }
+  .row .k { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim) }
+  .row .v { font-family: var(--mono); font-size: 15px; word-break: break-all }
+  .row .v.big { font-size: 20px; font-weight: 500 }
+  .row .v .unit { color: var(--dim); font-size: 13px; margin-left: 4px }
+  .row .v.loading { color: var(--faint) }
 
-  .section { margin-bottom: 24px }
-  .label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px }
+  /* buttons — full width, stacked */
+  .btn {
+    width: 100%; min-height: 50px; padding: 12px 16px; border-radius: 11px; border: 1px solid var(--line-strong);
+    background: #fff; color: var(--ink); font-weight: 600; font-size: 15px; cursor: pointer; transition: .15s;
+    display: flex; align-items: center; justify-content: center; gap: 10px; text-align: center;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--copper); color: var(--copper-dark) }
+  .btn:disabled { opacity: .45; cursor: not-allowed }
+  .btn.primary { background: var(--copper); border-color: var(--copper); color: #fff; font-size: 17px; min-height: 56px; letter-spacing: .02em }
+  .btn.primary:hover:not(:disabled) { background: var(--copper-dark); border-color: var(--copper-dark); color: #fff }
+  .btn.quiet { border-color: var(--line); color: var(--dim); min-height: 44px; font-weight: 500 }
+  .btn .st { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--green); font-weight: 500 }
+  .btn .st.off { color: var(--faint) }
+  .btn .wname { margin-right: auto }
 
+  /* wallet, connected */
+  .wallet-head { display: flex; align-items: center; gap: 10px; font-weight: 600 }
+  .wallet-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none }
+  .wallet-head .kind { color: var(--dim); font-weight: 500; font-size: 14px; margin-left: auto }
+
+  /* file drop */
   .drop {
-    display: block; border: 1px dashed var(--line); border-radius: 12px; padding: 26px; text-align: center;
-    cursor: pointer; transition: .15s; background: var(--bg2); user-select: none;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 26px 16px; text-align: center;
+    border: 2px dashed var(--line-strong); border-radius: 12px; background: #fff; cursor: pointer; transition: .15s; user-select: none;
   }
-  .drop:hover, .drop.over { border-color: var(--copper); background: var(--card) }
+  .drop:hover, .drop.over { border-color: var(--copper); background: var(--copper-tint) }
   .drop input { display: none }
-  .drop .big { font-family: var(--mono); color: var(--ink); font-size: 14px }
-  .drop .sub { color: var(--faint); font-family: var(--mono); font-size: 12px; margin-top: 6px }
-  .preview { margin-top: 14px; display: flex; align-items: center; gap: 14px }
-  .preview[hidden] { display: none }
+  .drop .big { font-weight: 600; font-size: 16px }
+  .drop .sub { color: var(--dim); font-size: 13px }
+  .preview { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px }
   .preview .thumb {
-    width: 64px; height: 64px; flex: none; border-radius: 9px; border: 1px solid var(--line);
-    background: var(--bg) center/contain no-repeat; display: grid; place-items: center;
-    font-family: var(--mono); font-size: 10px; color: var(--faint); overflow: hidden;
+    width: 56px; height: 56px; flex: none; border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+    display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: var(--dim); overflow: hidden;
   }
-  .preview .thumb img, .preview .thumb svg { max-width: 100%; max-height: 100% }
-  .preview .meta { font-family: var(--mono); font-size: 12.5px }
-  .preview .meta .fn { color: var(--ink) }
-  .preview .meta .d { color: var(--faint) }
+  .preview .thumb img { max-width: 100%; max-height: 100%; object-fit: contain }
+  .preview .meta { min-width: 0; font-size: 14px }
+  .preview .meta .fn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .preview .meta .d { color: var(--dim); font-family: var(--mono); font-size: 12px }
+  .preview .x { margin-left: auto; background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1 }
+  .preview .x:hover { color: var(--red) }
 
-  .tiers { display: flex; gap: 8px }
+  /* fee tiers — stacked radio rows */
   .tier {
-    flex: 1; background: var(--bg2); border: 1px solid var(--line); border-radius: 9px;
-    padding: 12px; cursor: pointer; text-align: center; transition: .15s;
+    display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; text-align: left; transition: .15s;
   }
   .tier:hover { border-color: var(--copper) }
-  .tier.sel { border-color: var(--copper); background: var(--copper-ghost) }
-  .tier .t { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim) }
-  .tier .r { font-family: var(--mono); font-size: 15px; color: var(--ink); margin-top: 4px }
-  .tier .u { font-family: var(--mono); font-size: 10px; color: var(--faint) }
+  .tier.sel { border-color: var(--copper); background: var(--copper-tint) }
+  .tier .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; display: grid; place-items: center }
+  .tier.sel .radio { border-color: var(--copper) }
+  .tier.sel .radio::after { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--copper) }
+  .tier .t { font-weight: 600 }
+  .tier .d { color: var(--dim); font-size: 13px }
+  .tier .r { margin-left: auto; font-family: var(--mono); font-size: 15px; white-space: nowrap }
+  .tier .r small { color: var(--dim); font-size: 12px }
 
-  .btn {
-    width: 100%; padding: 15px; font-family: var(--mono); font-size: 14px; font-weight: 700;
-    letter-spacing: .06em; text-transform: uppercase; border: none; border-radius: 10px;
-    cursor: pointer; transition: .15s; line-height: 1;
+  /* mint */
+  .summary { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--dim) }
+  .summary div { display: flex; justify-content: space-between; gap: 12px }
+  .summary b { color: var(--ink); font-weight: 600; font-family: var(--mono); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .note { margin: 0; font-size: 14px; color: var(--dim); text-align: center }
+  .steps { display: flex; flex-direction: column; gap: 6px }
+  .step { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); color: var(--faint); font-size: 14px }
+  .step .i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-strong); display: grid; place-items: center; font-family: var(--mono); font-size: 12px; flex: none }
+  .step.on { color: var(--ink); border-color: var(--copper); background: var(--copper-tint) }
+  .step.on .i { border-color: var(--copper); color: var(--copper) }
+  .step.ok { color: var(--green); border-color: var(--green); background: var(--green-tint) }
+  .step.ok .i { border-color: var(--green); background: var(--green); color: #fff }
+  .alert { padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.45 }
+  .alert.err { background: var(--red-tint); color: var(--red) }
+  .alert.warn { background: var(--gold-tint); color: #7a5806 }
+  .alert.ok { background: var(--green-tint); color: var(--green) }
+  .done h3 { margin: 0 0 4px; color: var(--green); font-size: 22px }
+
+  /* footer */
+  footer { text-align: center; color: var(--faint); font-size: 12px; padding: 28px 0 36px; display: flex; flex-direction: column; gap: 6px; align-items: center }
+  .foot-ver { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center }
+  .foot-ver a { color: var(--dim); text-decoration: underline; text-decoration-color: var(--line-strong) }
+  .foot-ver .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); display: inline-block }
+  .foot-ver .dot.ok { background: var(--green) }
+  .foot-ver .dot.behind { background: var(--gold) }
+  .deploy-btn { background: #fff; border: 1px solid var(--line); color: var(--dim); font-size: 12px; padding: 4px 11px; border-radius: 6px; cursor: pointer }
+  .deploy-btn:hover:not(:disabled) { border-color: var(--copper); color: var(--copper-dark) }
+  .deploy-btn:disabled { opacity: .5 }
+  .foot-build { font-family: var(--mono); font-size: 11px }
+
+  @media (min-width: 560px) {
+    .hero h1 { font-size: 32px }
+    .card { padding: 22px 20px }
   }
-  .btn.primary { background: var(--copper); color: #160f09 }
-  .btn.primary:hover:not(:disabled) { background: var(--copper2); transform: translateY(-1px) }
-  .btn.primary:disabled { opacity: .35; cursor: not-allowed }
-  .btn.ghost { background: var(--bg2); color: var(--dim); border: 1px solid var(--line) }
-  .btn.ghost:hover { border-color: var(--copper); color: var(--ink) }
-  .btn.small { width: auto; padding: 9px 16px; font-size: 12px; text-transform: none; letter-spacing: .02em }
-
-  .mintcard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px }
-  .summary { display: flex; flex-wrap: wrap; gap: 6px 20px; font-family: var(--mono); font-size: 12px; margin-bottom: 16px; color: var(--dim) }
-  .summary b { color: var(--ink); font-weight: 500 }
-
-  .wallet-bar { display: flex; align-items: center; gap: 10px }
-  .addr { font-family: var(--mono); font-size: 12px; color: var(--dim) }
-
-  .steps { display: flex; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--faint); margin-bottom: 10px; flex-wrap: wrap }
-  .steps .on { color: var(--copper); font-weight: 600 }
-  .steps .ok { color: var(--patina) }
-  .msg { font-family: var(--mono); font-size: 13px; color: var(--dim); margin: 0 }
-  .err { font-family: var(--mono); font-size: 13px; color: #e74c3c; margin: 8px 0 0 }
-  .done .t { font-family: var(--mono); font-size: 18px; color: var(--patina); font-weight: 700; margin: 0 0 6px }
-
-  footer { text-align: center; color: var(--faint); font-family: var(--mono); font-size: 11px; padding: 50px 0 30px; letter-spacing: .04em }
-  .foot-ver { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 11px }
-  .foot-ver a { color: var(--dim); text-decoration: underline; text-decoration-color: var(--line) }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); display: inline-block; flex: none }
-  .dot.ok { background: var(--patina) }
-  .dot.behind { background: var(--gold) }
-  .deploy-btn { background: var(--bg2); border: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 10px; letter-spacing: .04em; padding: 4px 11px; border-radius: 6px; cursor: pointer; transition: .15s }
-  .deploy-btn:hover:not(:disabled) { border-color: var(--copper); color: var(--ink) }
-  .deploy-btn:disabled { opacity: .5; cursor: default }
-  .foot-build { margin-top: 8px; font-size: 10.5px; color: var(--faint) }
-
-  dialog {
-    border: 1px solid var(--line); background: var(--card); color: var(--ink);
-    border-radius: 14px; padding: 0; width: 330px; max-width: 92vw;
-  }
-  dialog::backdrop { background: #000a; }
-  .modal-h { padding: 16px 18px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 13px; letter-spacing: .06em }
-  .wopt {
-    display: flex; align-items: center; justify-content: space-between; width: 100%;
-    padding: 14px 18px; background: none; border: none; border-bottom: 1px solid var(--line);
-    color: var(--ink); font-family: var(--mono); font-size: 13px; cursor: pointer; transition: .12s;
-  }
-  .wopt:hover:not(:disabled) { background: var(--bg2) }
-  .wopt:disabled { color: var(--faint); cursor: default }
-  .wopt .st { font-size: 11px; color: var(--patina) }
-  .wopt .st.off { color: var(--faint) }
 </style>
 </head>
 <body>
 <header class="wrap">
   <div class="brand">
     <svg class="glyph" viewBox="0 0 100 100" aria-hidden="true">
-      <g fill="none" stroke="#e0682f" stroke-width="3" stroke-linecap="round">
-        <circle cx="50" cy="22" r="10" stroke="#d9a441"/>
+      <g fill="none" stroke="#d4551c" stroke-width="3.5" stroke-linecap="round">
+        <circle cx="50" cy="22" r="10" stroke="#b7860b"/>
         <path d="M50 34 C38 46 24 52 14 50 C26 56 34 62 40 78"/>
         <path d="M50 34 C62 46 76 52 86 50 C74 56 66 62 60 78"/>
         <line x1="50" y1="36" x2="50" y2="82"/>
       </g>
     </svg>
     <div class="name">Angel<small>Guardian Set</small></div>
+    <span class="net-pill off" id="net">connecting…</span>
   </div>
-  <span class="net-pill" id="net">—</span>
 </header>
 
 <main class="wrap">
   <div class="hero">
     <h1>Mint your Guardian</h1>
-    <p>Drop a file, connect a wallet, mint. Each one is a numbered Counter — a
-       Counterparty asset bound to your file, numbered from zero.</p>
+    <p>Connect a wallet, drop a file, mint. Each one is a numbered Counter — a Counterparty asset bound to your file, numbered by the chain.</p>
   </div>
 
-  <div class="section">
-    <p class="label">1 · Your file</p>
+  <!-- 1 · Wallet -->
+  <section class="card" id="walletCard">
+    <h2><span class="n">1</span>Wallet</h2>
+    <div id="walletBody"></div>
+  </section>
+
+  <!-- 2 · File -->
+  <section class="card">
+    <h2><span class="n">2</span>Your file</h2>
     <label class="drop" id="drop">
       <input type="file" id="file" />
-      <div class="big" id="dropBig">Choose a file to inscribe</div>
-      <div class="sub">image, svg, text, json — anything</div>
+      <div class="big">Choose a file to inscribe</div>
+      <div class="sub">image, svg, text, json — anything · tap or drop</div>
     </label>
     <div class="preview" id="preview" hidden>
       <div class="thumb" id="thumb"></div>
       <div class="meta"><div class="fn" id="pfn"></div><div class="d" id="pd"></div></div>
+      <button class="x" id="clearFile" title="Remove file" aria-label="Remove file">×</button>
     </div>
-  </div>
+  </section>
 
-  <div class="section">
-    <p class="label">2 · Fee</p>
-    <div class="tiers" id="tiers">
-      <div class="tier" data-tier="economy"><div class="t">Economy</div><div class="r" id="r-economy">—</div><div class="u">sat/vB</div></div>
-      <div class="tier sel" data-tier="standard"><div class="t">Standard</div><div class="r" id="r-standard">—</div><div class="u">sat/vB</div></div>
-      <div class="tier" data-tier="fastest"><div class="t">Fast</div><div class="r" id="r-fastest">—</div><div class="u">sat/vB</div></div>
+  <!-- 3 · Fee -->
+  <section class="card">
+    <h2><span class="n">3</span>Fee</h2>
+    <div class="rows" id="tiers">
+      <button class="tier" data-tier="economy"><span class="radio"></span><span><div class="t">Economy</div><div class="d">Could take hours</div></span><span class="r" id="r-economy">—</span></button>
+      <button class="tier sel" data-tier="standard"><span class="radio"></span><span><div class="t">Standard</div><div class="d">Usually within the hour</div></span><span class="r" id="r-standard">—</span></button>
+      <button class="tier" data-tier="fastest"><span class="radio"></span><span><div class="t">Fast</div><div class="d">Next block or two</div></span><span class="r" id="r-fastest">—</span></button>
     </div>
-  </div>
+  </section>
 
-  <div class="section">
-    <p class="label">3 · Mint</p>
-    <div class="mintcard" id="mintcard">
-      <div class="summary">
-        <span>asset <b>numeric (free)</b></span>
-        <span>supply <b>1</b></span>
-        <span>fee <b id="sumFee">standard</b></span>
-        <span>file <b id="sumFile">none</b></span>
-      </div>
-      <div id="action"></div>
+  <!-- 4 · Mint -->
+  <section class="card">
+    <h2><span class="n">4</span>Mint</h2>
+    <div class="summary">
+      <div><span>Asset</span><b>numeric (free)</b></div>
+      <div><span>Supply</span><b>1</b></div>
+      <div><span>Fee</span><b id="sumFee">standard</b></div>
+      <div><span>File</span><b id="sumFile">none</b></div>
     </div>
-  </div>
+    <div id="action" class="rows"></div>
+  </section>
 </main>
 
 <footer class="wrap">
-  <div class="foot-line">For Angel — numbered by the chain, owned forever.</div>
+  <div>For Angel — numbered by the chain, owned forever.</div>
   <div class="foot-ver">
     <span class="dot" id="verdot"></span>
     <span id="vertext">checking version…</span>
@@ -201,109 +254,188 @@
   <div class="foot-build" id="build"></div>
 </footer>
 
-<dialog id="walletModal">
-  <div class="modal-h">Connect a wallet</div>
-  <button class="wopt" data-kind="unisat">Unisat <span class="st off" id="st-unisat">not found</span></button>
-  <button class="wopt" data-kind="okx">OKX <span class="st off" id="st-okx">not found</span></button>
-  <button class="wopt" data-kind="horizon">Horizon <span class="st off" id="st-horizon">not found</span></button>
-</dialog>
-
 <script>
 // ---------------------------------------------------------------------------
-// Config — talks to a counters-mint backend. Same origin by default (this page
-// is served from the backend's static dir); override with ?backend=https://host
-// ---------------------------------------------------------------------------
-// Where the browser sends /mint, /status, /__version. The backend runs on the
-// laptop; the Cloudflare tunnel makes it reachable from anywhere (incl. the
-// GitHub Pages copy). ?backend= overrides for testing. NOTE: this trycloudflare
-// hostname is ephemeral — if the tunnel restarts, update DEFAULT_BACKEND here.
 // Build stamp, baked into the page itself (no backend needed to read it).
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
-const VERSION = '0.2.0'
+// ---------------------------------------------------------------------------
+const VERSION = '0.3.0'
 const BUILD_COMMIT = '__COMMIT__'
+const REPO_URL = 'https://github.com/metaver5o/angel'
 
-const DEFAULT_BACKEND = 'https://are-town-mother-zope.trycloudflare.com'
-const BACKEND = new URLSearchParams(location.search).get('backend') || DEFAULT_BACKEND
+// ---------------------------------------------------------------------------
+// Backend — the counters-mint server (/status, /mint/*, /__version).
+// Same origin when this page is served by the stack itself; the GitHub Pages
+// copy has no backend of its own, so it uses the tunnel. ?backend= overrides.
+// NOTE: the trycloudflare hostname is ephemeral — update it if the tunnel restarts.
+// ---------------------------------------------------------------------------
+const TUNNEL_BACKEND = 'https://are-town-mother-zope.trycloudflare.com'
+const BACKEND = new URLSearchParams(location.search).get('backend')
+  || (location.hostname.endsWith('github.io') || location.protocol === 'file:' ? TUNNEL_BACKEND : '')
 const api = (p) => BACKEND + p
+
+// Public Counterparty Core API (CORS-enabled), for XCP balances.
+const CP_API = {
+  mainnet: 'https://api.counterparty.io:4000/v2',
+  testnet4: 'https://api.counterparty.io:44000/v2',
+}
 
 const state = {
   network: 'mainnet',
   explorerBase: 'https://mempool.space',
-  wallet: null,            // { kind, address }
+  wallet: null,        // { kind, address }
+  balances: null,      // { btc, xcp } in whole units, null while loading, NaN on failure
   file: null,
   tier: 'standard',
   fees: { economy: 1, standard: 2, fastest: 5 },
   step: 'idle',
+  txid: null,
+  error: null,
 }
 
 // ---------------------------------------------------------------------------
-// Wallet providers — Unisat / OKX / Horizon share connect/sendBitcoin/getUtxos/
-// signPsbt. OKX exposes a per-network provider.
+// Wallets. Each entry: present(), connect() -> address, silent() -> address|null,
+// disconnect(), and mints — whether the commit/reveal flow below can drive it.
+// XCP Wallet and Horizon only sign PSBTs (no sendBitcoin / UTXO listing), so
+// the backend's pay-then-reveal flow can't use them yet.
 // ---------------------------------------------------------------------------
-function okxProvider() {
+const okxProvider = () => {
   const w = window.okxwallet
   if (!w) return null
-  return state.network === 'testnet4' ? w.bitcoinTestnet
-       : state.network === 'signet'   ? w.bitcoinSignet
-       : w.bitcoin
+  return state.network === 'testnet4' ? w.bitcoinTestnet : state.network === 'signet' ? w.bitcoinSignet : w.bitcoin
 }
-function provider(kind = state.wallet?.kind) {
-  if (kind === 'unisat') return window.unisat || null
-  if (kind === 'horizon') return window.horizon || null
-  if (kind === 'okx') return okxProvider()
-  return null
+const horizonProvider = () => window.HorizonWalletProvider
+  || (window.btc_providers?.some(p => p.id === 'HorizonWalletProvider') ? window.HorizonWalletProvider : null)
+
+const WALLETS = {
+  xcp: {
+    name: 'XCP Wallet',
+    install: 'https://chromewebstore.google.com/detail/xcp-wallet/nicpjdbehgcjbjfjkobcidnfmfpijohg',
+    present: () => !!window.xcpwallet,
+    async connect() {
+      const r = await window.xcpwallet.request({ method: 'xcp_requestAccounts' })
+      const accounts = Array.isArray(r) ? r : r?.accounts
+      return accounts?.[0] || null
+    },
+    async silent() {
+      const r = await window.xcpwallet.request({ method: 'xcp_accounts' })
+      return Array.isArray(r) ? r[0] || null : null
+    },
+    async disconnect() { try { await window.xcpwallet.request({ method: 'xcp_disconnect' }) } catch {} },
+    mints: false,
+  },
+  unisat: {
+    name: 'Unisat',
+    install: 'https://unisat.io/download',
+    present: () => !!window.unisat,
+    async connect() { return (await window.unisat.requestAccounts())?.[0] || null },
+    async silent() { return (await window.unisat.getAccounts())?.[0] || null },
+    async disconnect() {},
+    mints: true,
+    provider: () => window.unisat,
+  },
+  okx: {
+    name: 'OKX Wallet',
+    install: 'https://www.okx.com/web3',
+    present: () => !!okxProvider(),
+    async connect() { return (await okxProvider().connect())?.address || null },
+    async silent() { return (await okxProvider().getAccounts?.())?.[0] || null },
+    async disconnect() {},
+    mints: true,
+    provider: okxProvider,
+  },
+  horizon: {
+    name: 'Horizon',
+    install: 'https://chromewebstore.google.com/detail/horizon-wallet/bnmgkjlaommgappfckljlelgahnbngme',
+    present: () => !!horizonProvider(),
+    async connect() {
+      const { result } = await horizonProvider().request('getAddresses')
+      const list = result?.addresses || []
+      return (list.find(a => a.type === 'p2tr') || list[0])?.address || null
+    },
+    async silent() {
+      const res = await horizonProvider().request('wallet_getAccount', { addresses: [] })
+      const list = res?.result?.addresses || []
+      return (list.find(a => a.addressType === 'p2tr') || list[0])?.address || null
+    },
+    async disconnect() { try { await horizonProvider().request('wallet_disconnect', {}) } catch {} },
+    mints: false,
+  },
 }
-function available(kind) {
-  if (kind === 'unisat') return !!window.unisat
-  if (kind === 'horizon') return !!window.horizon
-  if (kind === 'okx') return !!okxProvider()
-  return false
-}
+const WALLET_ORDER = ['xcp', 'unisat', 'okx', 'horizon']
+
 async function connect(kind) {
-  const p = provider(kind)
-  if (!p) return false
-  let address
-  if (kind === 'okx') {
-    const res = await p.connect()
-    address = res?.address
-  } else {
-    const accts = await p.requestAccounts()
-    address = accts?.[0]
-  }
-  if (!address) return false
+  const w = WALLETS[kind]
+  if (!w?.present()) return
+  const address = await w.connect()
+  if (!address) throw new Error('Wallet returned no address')
   state.wallet = { kind, address }
   localStorage.setItem('angel:wallet', kind)
-  renderAction()
-  return true
+  renderWallet(); renderAction()
+  loadBalances()
 }
-function disconnect() {
-  state.wallet = null
+async function disconnect() {
+  const kind = state.wallet?.kind
+  state.wallet = null; state.balances = null
   localStorage.removeItem('angel:wallet')
-  renderAction()
+  renderWallet(); renderAction()
+  if (kind) await WALLETS[kind].disconnect()
 }
+
+// XCP Wallet injects late sometimes; ask it to announce itself and re-render.
+window.addEventListener('xcp-wallet#initialized', () => renderWallet())
+window.dispatchEvent(new Event('xcp-wallet#discover'))
+
+// ---------------------------------------------------------------------------
+// Balances — BTC from mempool (confirmed + unconfirmed), XCP from Counterparty.
+// ---------------------------------------------------------------------------
+async function loadBalances() {
+  const addr = state.wallet?.address
+  if (!addr) return
+  state.balances = null
+  renderWallet()
+  const [btc, xcp] = await Promise.all([
+    fetch(`${state.explorerBase}/api/address/${addr}`).then(r => r.json()).then(a => {
+      const c = a.chain_stats, m = a.mempool_stats
+      return (c.funded_txo_sum - c.spent_txo_sum + m.funded_txo_sum - m.spent_txo_sum) / 1e8
+    }).catch(() => NaN),
+    CP_API[state.network]
+      ? fetch(`${CP_API[state.network]}/addresses/${addr}/balances/XCP?type=address`).then(r => r.json()).then(d => {
+          if (d.error) throw new Error(d.error)
+          return (d.result || []).reduce((s, b) => s + (b.quantity || 0), 0) / 1e8
+        }).catch(() => NaN)
+      : Promise.resolve(NaN),
+  ])
+  if (state.wallet?.address !== addr) return   // changed while loading
+  state.balances = { btc, xcp }
+  renderWallet()
+}
+const fmtAmt = (n, max = 8) => Number.isNaN(n) ? 'unavailable'
+  : n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: max })
 
 // ---------------------------------------------------------------------------
 // Boot — learn network + fees from the backend
 // ---------------------------------------------------------------------------
 async function boot() {
+  const pill = document.getElementById('net')
   try {
     const s = await (await fetch(api('/status'))).json()
     if (s.network) state.network = s.network
     if (s.explorer_base) state.explorerBase = s.explorer_base
-  } catch {}
-  document.getElementById('net').textContent = state.network
+    pill.textContent = state.network; pill.className = 'net-pill'
+  } catch {
+    pill.textContent = 'backend offline'; pill.className = 'net-pill off'
+  }
   await loadFees()
-  // silent reconnect
   const prev = localStorage.getItem('angel:wallet')
-  if (prev && available(prev)) {
+  if (prev && WALLETS[prev]?.present()) {
     try {
-      const p = provider(prev)
-      const accts = prev === 'okx' ? [(await p.getAccounts?.())?.[0]] : await p.getAccounts()
-      if (accts && accts[0]) { state.wallet = { kind: prev, address: accts[0] }; }
+      const address = await WALLETS[prev].silent()
+      if (address) { state.wallet = { kind: prev, address }; loadBalances() }
     } catch {}
   }
-  renderAction()
+  renderWallet(); renderAction()
 }
 
 async function loadFees() {
@@ -319,7 +451,7 @@ async function loadFees() {
     }
   } catch {}
   for (const t of ['economy', 'standard', 'fastest'])
-    document.getElementById('r-' + t).textContent = state.fees[t]
+    document.getElementById('r-' + t).innerHTML = `${state.fees[t]} <small>sat/vB</small>`
 }
 
 // ---------------------------------------------------------------------------
@@ -331,25 +463,40 @@ fileEl.addEventListener('change', (e) => setFile(e.target.files?.[0]))
 ;['dragover', 'dragenter'].forEach(ev => dropEl.addEventListener(ev, (e) => { e.preventDefault(); dropEl.classList.add('over') }))
 ;['dragleave', 'drop'].forEach(ev => dropEl.addEventListener(ev, (e) => { e.preventDefault(); dropEl.classList.remove('over') }))
 dropEl.addEventListener('drop', (e) => setFile(e.dataTransfer?.files?.[0]))
+document.getElementById('clearFile').onclick = () => setFile(null)
 
+let thumbUrl = null
 function setFile(f) {
-  if (!f) return
-  state.file = f
-  document.getElementById('preview').hidden = false
-  document.getElementById('pfn').textContent = f.name
-  document.getElementById('pd').textContent = `${f.type || 'unknown'} · ${fmtBytes(f.size)}`
-  document.getElementById('sumFile').textContent = f.name
+  state.file = f || null
+  if (thumbUrl) { URL.revokeObjectURL(thumbUrl); thumbUrl = null }
+  const preview = document.getElementById('preview')
   const thumb = document.getElementById('thumb')
   thumb.innerHTML = ''
+  if (!f) {
+    preview.hidden = true; fileEl.value = ''
+    document.getElementById('sumFile').textContent = 'none'
+    return renderAction()
+  }
+  preview.hidden = false
+  document.getElementById('pfn').textContent = f.name
+  document.getElementById('pd').textContent = `${f.type || 'unknown type'} · ${fmtBytes(f.size)}`
+  document.getElementById('sumFile').textContent = f.name
   if (f.type.startsWith('image/')) {
-    const url = URL.createObjectURL(f)
-    const img = new Image(); img.src = url; thumb.appendChild(img)
+    thumbUrl = URL.createObjectURL(f)
+    const img = new Image(); img.src = thumbUrl; thumb.appendChild(img)
   } else {
-    thumb.textContent = (f.name.split('.').pop() || 'file').toUpperCase()
+    thumb.textContent = (f.name.split('.').pop() || 'file').toUpperCase().slice(0, 5)
   }
   renderAction()
 }
 function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(2) + ' MB' }
+
+// Chunked so large files don't overflow the argument list.
+function bytesToBase64(bytes) {
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+  return btoa(s)
+}
 
 // ---------------------------------------------------------------------------
 // Fee tiers
@@ -362,216 +509,202 @@ document.getElementById('tiers').addEventListener('click', (e) => {
 })
 
 // ---------------------------------------------------------------------------
-// Wallet modal
-// ---------------------------------------------------------------------------
-const modal = document.getElementById('walletModal')
-function openWallet() {
-  for (const kind of ['unisat', 'okx', 'horizon']) {
-    const el = document.getElementById('st-' + kind)
-    const ok = available(kind)
-    el.textContent = ok ? 'ready' : 'not found'
-    el.classList.toggle('off', !ok)
-    el.closest('.wopt').disabled = !ok
-  }
-  modal.showModal()
-}
-modal.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.wopt'); if (!btn) return
-  modal.close()
-  try { await connect(btn.dataset.kind) }
-  catch (err) { alert('Connect failed: ' + (err?.message || err)) }
-})
-modal.addEventListener('click', (e) => { if (e.target === modal) modal.close() })
-
-// ---------------------------------------------------------------------------
 // Mint flow  (prepare -> pay commit -> reveal -> sign -> broadcast)
 // ---------------------------------------------------------------------------
 async function mint() {
-  if (!state.wallet) return openWallet()
-  const p = provider()
-  if (!p) { disconnect(); return openWallet() }
+  const w = state.wallet && WALLETS[state.wallet.kind]
+  if (!w?.mints) return
+  const p = w.provider()
+  if (!p) { await disconnect(); return }
 
   setStep('paying')
   try {
-    // 1. file -> base64
     let body_b64 = '', content_type = 'application/octet-stream'
     if (state.file) {
-      const buf = await state.file.arrayBuffer()
-      body_b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      body_b64 = bytesToBase64(new Uint8Array(await state.file.arrayBuffer()))
       content_type = state.file.type || 'application/octet-stream'
     }
 
-    // 2. prepare
     const prep = await post('/mint/prepare', {
       content_type, body_b64, supply: 1, divisible: false,
       fee_rate: state.fees[state.tier], wallet_address: state.wallet.address,
     })
     if (prep.explorer_base) state.explorerBase = prep.explorer_base
 
-    // 3. pay dust to commit address
+    // Make sure a reveal can be funded BEFORE paying the commit.
+    const pickSource = (utxos) => utxos.filter(u => u.satoshis >= prep.min_source_sats).sort((a, b) => b.satoshis - a.satoshis)[0]
+    if (!pickSource(await getUtxos(p)))
+      throw new Error(`This wallet needs a UTXO of at least ${prep.min_source_sats} sats to fund the reveal. Fund it and retry.`)
+
     const commitTxid = await p.sendBitcoin(prep.commit_address, prep.commit_value_sats)
 
-    // 4. pick a source UTXO (not the commit output, big enough)
-    const utxos = await p.getUtxos()
-    const src = utxos
-      .filter(u => u.txid !== commitTxid && u.satoshis >= prep.min_source_sats)
-      .sort((a, b) => b.satoshis - a.satoshis)[0]
-    if (!src) throw new Error(`No UTXO >= ${prep.min_source_sats} sats. Fund the wallet and retry.`)
+    // Re-list after the commit: the commit's change may now be the only candidate.
+    const src = pickSource(await getUtxos(p))
+    if (!src) throw new Error(`No UTXO >= ${prep.min_source_sats} sats after paying the commit (${commitTxid}). Keep this txid and retry once it confirms.`)
 
-    // 5. reveal PSBT (server signs vin[1])
     setStep('signing')
     const rev = await post('/mint/reveal', {
       session_id: prep.session_id,
       commit_txid: commitTxid,
       source_utxo: { txid: src.txid, vout: src.vout, value: src.satoshis, script_pubkey_hex: src.scriptPk },
     })
-
-    // 6. wallet signs vin[0]
     const signed = await p.signPsbt(rev.reveal_psbt_hex, {
       autoFinalized: false,
       toSignInputs: [{ index: 0, address: state.wallet.address, disableTweakSigner: false }],
     })
 
-    // 7. broadcast
     setStep('broadcasting')
     const bc = await post('/mint/broadcast', { session_id: prep.session_id, signed_psbt_hex: signed })
-
     state.txid = bc.reveal_txid
     setStep('done')
+    loadBalances()
   } catch (e) {
     state.error = e?.message || String(e)
     setStep('error')
   }
 }
 
+// Unisat calls it getBitcoinUtxos; older builds and OKX call it getUtxos.
+async function getUtxos(p) {
+  const list = p.getBitcoinUtxos ? await p.getBitcoinUtxos() : p.getUtxos ? await p.getUtxos() : []
+  return (list || []).map(u => ({ txid: u.txid, vout: u.vout, satoshis: u.satoshis ?? u.value, scriptPk: u.scriptPk ?? u.scriptPubKey }))
+}
+
 async function post(path, body) {
-  const r = await fetch(api(path), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  })
+  const r = await fetch(api(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
   return data
 }
-
 function setStep(s) { state.step = s; renderAction() }
 
 // ---------------------------------------------------------------------------
-// Render the action area (depends on wallet + step)
+// Render: wallet card
+// ---------------------------------------------------------------------------
+function renderWallet() {
+  const el = document.getElementById('walletBody')
+  if (!state.wallet) {
+    el.innerHTML = `<div class="rows">${WALLET_ORDER.map(k => {
+      const w = WALLETS[k], ok = w.present()
+      return ok
+        ? `<button class="btn" data-connect="${k}"><span class="wname">${w.name}</span><span class="st">ready</span></button>`
+        : `<a class="btn" href="${w.install}" target="_blank" rel="noopener"><span class="wname">${w.name}</span><span class="st off">not installed · get it</span></a>`
+    }).join('')}</div>`
+    el.querySelectorAll('[data-connect]').forEach(b => b.onclick = async () => {
+      b.disabled = true
+      try { await connect(b.dataset.connect) }
+      catch (err) { alert('Connect failed: ' + (err?.message || err)); b.disabled = false }
+    })
+    return
+  }
+  const w = WALLETS[state.wallet.kind], b = state.balances
+  const val = (n, unit) => b === null ? `<span class="v big loading">loading…</span>`
+    : `<span class="v big">${escapeHtml(fmtAmt(n))}<span class="unit">${unit}</span></span>`
+  el.innerHTML = `
+    <div class="rows">
+      <div class="wallet-head"><span class="dot"></span>Connected<span class="kind">${w.name}</span></div>
+      <div class="row"><span class="k">Address</span><span class="v">${escapeHtml(state.wallet.address)}</span></div>
+      <div class="row"><span class="k">BTC balance</span>${val(b?.btc, 'BTC')}</div>
+      <div class="row"><span class="k">XCP balance</span>${val(b?.xcp, 'XCP')}</div>
+      <button class="btn quiet" id="refresh" ${b === null ? 'disabled' : ''}>Refresh balances</button>
+      <button class="btn quiet" id="disc">Disconnect</button>
+    </div>`
+  el.querySelector('#refresh').onclick = loadBalances
+  el.querySelector('#disc').onclick = disconnect
+}
+
+// ---------------------------------------------------------------------------
+// Render: mint action area
 // ---------------------------------------------------------------------------
 function renderAction() {
   const el = document.getElementById('action')
   const busy = ['paying', 'signing', 'broadcasting'].includes(state.step)
 
   if (state.step === 'done') {
-    el.innerHTML = `<div class="done">
-      <p class="t">Inscribed.</p>
-      <p class="msg">Counterparty numbers it in the next block.</p>
-      <p style="margin:12px 0"><a href="${state.explorerBase}/tx/${state.txid}" target="_blank" rel="noopener">View reveal tx &#8599;</a></p>
-      <button class="btn ghost small" id="again">Mint another</button>
-    </div>`
+    el.innerHTML = `<div class="alert ok done">
+        <h3>Inscribed.</h3>
+        Counterparty numbers it in the next block.<br>
+        <a href="${escapeHtml(state.explorerBase)}/tx/${escapeHtml(state.txid)}" target="_blank" rel="noopener">View reveal tx ↗</a>
+      </div>
+      <button class="btn" id="again">Mint another</button>`
     el.querySelector('#again').onclick = () => { state.step = 'idle'; state.txid = null; renderAction() }
     return
   }
   if (state.step === 'error') {
-    el.innerHTML = `<p class="err">${escapeHtml(state.error)}</p><button class="btn ghost small" id="retry" style="margin-top:12px">Try again</button>`
+    el.innerHTML = `<div class="alert err">${escapeHtml(state.error)}</div><button class="btn" id="retry">Try again</button>`
     el.querySelector('#retry').onclick = () => { state.step = 'idle'; renderAction() }
     return
   }
   if (busy) {
     const cls = (k) => order(state.step) > order(k) ? 'ok' : state.step === k ? 'on' : ''
+    const icon = (k, n) => cls(k) === 'ok' ? '✓' : n
     el.innerHTML = `<div class="steps">
-        <span class="${cls('paying')}">1 pay commit</span>
-        <span class="${cls('signing')}">2 sign reveal</span>
-        <span class="${cls('broadcasting')}">3 broadcast</span>
-      </div>
-      <p class="msg">${
-        state.step === 'paying' ? 'Approve the commit payment in your wallet…'
-        : state.step === 'signing' ? 'Sign the reveal transaction in your wallet…'
-        : 'Broadcasting to Bitcoin…'}</p>`
+        <div class="step ${cls('paying')}"><span class="i">${icon('paying', 1)}</span>Pay the commit — approve in your wallet</div>
+        <div class="step ${cls('signing')}"><span class="i">${icon('signing', 2)}</span>Sign the reveal — approve in your wallet</div>
+        <div class="step ${cls('broadcasting')}"><span class="i">${icon('broadcasting', 3)}</span>Broadcast to Bitcoin</div>
+      </div>`
     return
   }
 
   // idle
   if (!state.wallet) {
-    el.innerHTML = `<button class="btn ghost" id="connect">Connect wallet to mint</button>`
-    el.querySelector('#connect').onclick = openWallet
+    el.innerHTML = `<button class="btn primary" disabled>Mint Counter</button><p class="note">Connect a wallet first (step 1).</p>`
     return
   }
-  el.innerHTML = `
-    <div class="wallet-bar" style="margin-bottom:14px">
-      <span class="addr">${shortAddr(state.wallet.address)}</span>
-      <button class="btn ghost small" id="disc">Disconnect</button>
-    </div>
-    <button class="btn primary" id="go" ${state.file ? '' : 'disabled'}>Mint Counter</button>
-    ${state.file ? '' : '<p class="msg" style="margin-top:10px;text-align:center">Choose a file first.</p>'}`
-  el.querySelector('#disc').onclick = disconnect
+  const w = WALLETS[state.wallet.kind]
+  if (!w.mints) {
+    el.innerHTML = `<button class="btn primary" disabled>Mint Counter</button>
+      <div class="alert warn">Minting through ${w.name} isn't wired up yet — it signs PSBTs only, and this mint flow needs the wallet to pay the commit directly. Connect Unisat or OKX to mint.</div>`
+    return
+  }
+  el.innerHTML = `<button class="btn primary" id="go" ${state.file ? '' : 'disabled'}>Mint Counter</button>
+    ${state.file ? '' : '<p class="note">Choose a file first (step 2).</p>'}`
   const go = el.querySelector('#go'); if (go) go.onclick = mint
 }
 function order(s) { return ['idle','paying','signing','broadcasting','done'].indexOf(s) }
-function shortAddr(a) { return a ? a.slice(0, 8) + '…' + a.slice(-6) : '' }
-function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 
 // ---------------------------------------------------------------------------
-// Version footer + Deploy button (talks to the deployer sidecar via the proxy)
+// Version footer + Deploy button (deployer sidecar via the proxy)
 // ---------------------------------------------------------------------------
-const REPO_URL = 'https://github.com/metaver5o/angel'
-
 async function loadVersion() {
-  const dot = document.getElementById('verdot')
-  const text = document.getElementById('vertext')
-  const btn = document.getElementById('deployBtn')
+  const dot = document.getElementById('verdot'), text = document.getElementById('vertext'), btn = document.getElementById('deployBtn')
   try {
     const v = await (await fetch(api('/__version'))).json()
     if (v.error) throw new Error(v.error)
-    const link = `<a href="${REPO_URL}/commit/${v.deployed}" target="_blank" rel="noopener">${v.deployed_short}</a>`
+    const link = `<a href="${REPO_URL}/commit/${escapeHtml(v.deployed)}" target="_blank" rel="noopener">${escapeHtml(v.deployed_short)}</a>`
     if (v.up_to_date) {
-      dot.className = 'dot ok'
-      text.innerHTML = `v ${link} · up to date`
-      btn.hidden = true
+      dot.className = 'dot ok'; text.innerHTML = `server ${link} · up to date`; btn.hidden = true
     } else {
-      dot.className = 'dot behind'
-      text.innerHTML = `v ${link} · behind (latest ${v.latest_short})`
+      dot.className = 'dot behind'; text.innerHTML = `server ${link} · behind (latest ${escapeHtml(v.latest_short)})`
       btn.hidden = false; btn.disabled = false; btn.textContent = 'Deploy latest'
     }
   } catch {
-    dot.className = 'dot'
-    text.textContent = 'version unavailable'
-    btn.hidden = true
+    dot.className = 'dot'; text.textContent = 'server version unavailable'; btn.hidden = true
   }
 }
-
 async function doDeploy() {
-  const btn = document.getElementById('deployBtn')
-  const text = document.getElementById('vertext')
+  const btn = document.getElementById('deployBtn'), text = document.getElementById('vertext')
   let token = localStorage.getItem('angel:deploytoken') || ''
-  if (!token) {
-    token = prompt('Deploy token:') || ''
-    if (token) localStorage.setItem('angel:deploytoken', token)
-  }
+  if (!token) { token = prompt('Deploy token:') || ''; if (token) localStorage.setItem('angel:deploytoken', token) }
   btn.disabled = true; btn.textContent = 'Deploying…'
   try {
-    const r = await fetch(api('/__deploy'), {
-      method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {},
-    })
+    const r = await fetch(api('/__deploy'), { method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {} })
     const d = await r.json()
     if (!r.ok || d.error) {
       if (r.status === 401) localStorage.removeItem('angel:deploytoken')
       throw new Error(d.error || `HTTP ${r.status}`)
     }
     text.textContent = d.changed ? `deployed ${d.from} → ${d.to} ✓` : 'already latest ✓'
-    // index.html was just updated on disk; reload to show the published version.
     setTimeout(() => location.reload(), 1400)
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Retry deploy'
-    text.textContent = 'deploy failed: ' + (e.message || e)
+    btn.disabled = false; btn.textContent = 'Retry deploy'; text.textContent = 'deploy failed: ' + (e.message || e)
   }
 }
-
 document.getElementById('deployBtn').addEventListener('click', doDeploy)
 document.getElementById('build').textContent =
   `build v${VERSION}` + (BUILD_COMMIT.startsWith('__') ? '' : ` · ${BUILD_COMMIT}`)
 loadVersion()
-// Re-check so a new push shows up as "behind + Deploy latest" without a reload.
 setInterval(loadVersion, 30000)
 
 boot()
