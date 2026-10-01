@@ -48,14 +48,15 @@
   .label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px }
 
   .drop {
-    border: 1px dashed var(--line); border-radius: 12px; padding: 26px; text-align: center;
-    cursor: pointer; transition: .15s; background: var(--bg2);
+    display: block; border: 1px dashed var(--line); border-radius: 12px; padding: 26px; text-align: center;
+    cursor: pointer; transition: .15s; background: var(--bg2); user-select: none;
   }
   .drop:hover, .drop.over { border-color: var(--copper); background: var(--card) }
   .drop input { display: none }
   .drop .big { font-family: var(--mono); color: var(--ink); font-size: 14px }
   .drop .sub { color: var(--faint); font-family: var(--mono); font-size: 12px; margin-top: 6px }
   .preview { margin-top: 14px; display: flex; align-items: center; gap: 14px }
+  .preview[hidden] { display: none }
   .preview .thumb {
     width: 64px; height: 64px; flex: none; border-radius: 9px; border: 1px solid var(--line);
     background: var(--bg) center/contain no-repeat; display: grid; place-items: center;
