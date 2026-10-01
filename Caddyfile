@@ -1,0 +1,11 @@
+# Single front door for the tunnel: deploy/version endpoints go to the deployer
+# sidecar, everything else to the mint app.
+:80 {
+	@deploy path /__version /__deploy
+	handle @deploy {
+		reverse_proxy deployer:8090
+	}
+	handle {
+		reverse_proxy app:8082
+	}
+}

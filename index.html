@@ -104,6 +104,14 @@
   .done .t { font-family: var(--mono); font-size: 18px; color: var(--patina); font-weight: 700; margin: 0 0 6px }
 
   footer { text-align: center; color: var(--faint); font-family: var(--mono); font-size: 11px; padding: 50px 0 30px; letter-spacing: .04em }
+  .foot-ver { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 11px }
+  .foot-ver a { color: var(--dim); text-decoration: underline; text-decoration-color: var(--line) }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); display: inline-block; flex: none }
+  .dot.ok { background: var(--patina) }
+  .dot.behind { background: var(--gold) }
+  .deploy-btn { background: var(--bg2); border: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 10px; letter-spacing: .04em; padding: 4px 11px; border-radius: 6px; cursor: pointer; transition: .15s }
+  .deploy-btn:hover:not(:disabled) { border-color: var(--copper); color: var(--ink) }
+  .deploy-btn:disabled { opacity: .5; cursor: default }
 
   dialog {
     border: 1px solid var(--line); background: var(--card); color: var(--ink);
@@ -181,7 +189,14 @@
   </div>
 </main>
 
-<footer class="wrap">For Angel — numbered by the chain, owned forever.</footer>
+<footer class="wrap">
+  <div class="foot-line">For Angel — numbered by the chain, owned forever.</div>
+  <div class="foot-ver">
+    <span class="dot" id="verdot"></span>
+    <span id="vertext">checking version…</span>
+    <button class="deploy-btn" id="deployBtn" hidden>Deploy latest</button>
+  </div>
+</footer>
 
 <dialog id="walletModal">
   <div class="modal-h">Connect a wallet</div>
@@ -481,6 +496,65 @@ function renderAction() {
 function order(s) { return ['idle','paying','signing','broadcasting','done'].indexOf(s) }
 function shortAddr(a) { return a ? a.slice(0, 8) + '…' + a.slice(-6) : '' }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
+
+// ---------------------------------------------------------------------------
+// Version footer + Deploy button (talks to the deployer sidecar via the proxy)
+// ---------------------------------------------------------------------------
+const REPO_URL = 'https://github.com/metaver5o/angel'
+
+async function loadVersion() {
+  const dot = document.getElementById('verdot')
+  const text = document.getElementById('vertext')
+  const btn = document.getElementById('deployBtn')
+  try {
+    const v = await (await fetch(api('/__version'))).json()
+    if (v.error) throw new Error(v.error)
+    const link = `<a href="${REPO_URL}/commit/${v.deployed}" target="_blank" rel="noopener">${v.deployed_short}</a>`
+    if (v.up_to_date) {
+      dot.className = 'dot ok'
+      text.innerHTML = `v ${link} · up to date`
+      btn.hidden = true
+    } else {
+      dot.className = 'dot behind'
+      text.innerHTML = `v ${link} · behind (latest ${v.latest_short})`
+      btn.hidden = false; btn.disabled = false; btn.textContent = 'Deploy latest'
+    }
+  } catch {
+    dot.className = 'dot'
+    text.textContent = 'version unavailable'
+    btn.hidden = true
+  }
+}
+
+async function doDeploy() {
+  const btn = document.getElementById('deployBtn')
+  const text = document.getElementById('vertext')
+  let token = localStorage.getItem('angel:deploytoken') || ''
+  if (!token) {
+    token = prompt('Deploy token:') || ''
+    if (token) localStorage.setItem('angel:deploytoken', token)
+  }
+  btn.disabled = true; btn.textContent = 'Deploying…'
+  try {
+    const r = await fetch(api('/__deploy'), {
+      method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {},
+    })
+    const d = await r.json()
+    if (!r.ok || d.error) {
+      if (r.status === 401) localStorage.removeItem('angel:deploytoken')
+      throw new Error(d.error || `HTTP ${r.status}`)
+    }
+    text.textContent = d.changed ? `deployed ${d.from} → ${d.to} ✓` : 'already latest ✓'
+    // index.html was just updated on disk; reload to show the published version.
+    setTimeout(() => location.reload(), 1400)
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Retry deploy'
+    text.textContent = 'deploy failed: ' + (e.message || e)
+  }
+}
+
+document.getElementById('deployBtn').addEventListener('click', doDeploy)
+loadVersion()
 
 boot()
 </script>

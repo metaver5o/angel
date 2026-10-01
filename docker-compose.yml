@@ -1,14 +1,19 @@
 # Angel — Guardian Set mint, staging stack.
 #
-#   app     counters-mint backend (the real /mint/* PSBT engine), serving
-#           Angel's single-page mint at / (index.html mounted over its static
-#           shell — the explorer SPA is not used here).
-#   tunnel  cloudflared quick tunnel — a public https URL with no account or
-#           token, printed in the logs, so you can show staging to anyone.
+#   app       counters-mint backend (the real /mint/* PSBT engine), serving
+#             Angel's single-page mint at / (index.html mounted over its static
+#             shell). XCP runs locally; BTC comes from a public RPC (see .env).
+#   deployer  pulls origin/main and hard-resets the working tree. Polls every
+#             60s (so no cron) and exposes /__version + /__deploy for the
+#             in-page Deploy button. index.html is a live volume mount, so a
+#             pull republishes instantly with no image rebuild.
+#   proxy     Caddy front door: /__version + /__deploy -> deployer, else -> app.
+#             Lets a single quick tunnel serve both on one origin.
+#   tunnel    cloudflared quick tunnel -> proxy. Public https URL in its logs.
 #
 # Usage:
-#   cp .env.example .env     # point BTC_RPC_* / CP_API_URL at your node
-#   docker compose up --build
+#   cp .env.example .env     # set DEPLOY_TOKEN + backend endpoints
+#   docker compose up -d --build
 #   docker compose logs -f tunnel   # grab the https://*.trycloudflare.com URL
 
 services:
@@ -21,21 +26,43 @@ services:
       COUNTER_DATA_DIR: /data
     volumes:
       - angel-data:/data
-      # Angel's mint page becomes the site root. Read-only so a redeploy of the
-      # backend image can't clobber it.
       - ./index.html:/app/counters_proto/server/static/index.html:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    # Quick tunnel: no Cloudflare account needed. Want a stable, named URL on
-    # your own domain instead? Set TUNNEL_TOKEN in .env and swap the command for:
-    #   command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
-    command: ["tunnel", "--no-autoupdate", "--url", "http://app:8082"]
+  deployer:
+    build: ./deployer
+    environment:
+      REPO_DIR: /repo
+      BRANCH: main
+      REMOTE_URL: https://github.com/metaver5o/angel.git
+      GITHUB_REPO: metaver5o/angel
+      POLL_SECONDS: "60"
+      DEPLOY_TOKEN: ${DEPLOY_TOKEN:-}
+    volumes:
+      # The repo itself (rw): a pull here updates the host's index.html, which
+      # the app serves live. .env is untracked, so reset --hard never touches it.
+      - ./:/repo
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - app
+      - deployer
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    # Quick tunnel: no account needed. For a permanently stable URL, use a named
+    # tunnel: set TUNNEL_TOKEN in .env and swap to:
+    #   command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://proxy:80"]
+    depends_on:
+      - proxy
     restart: unless-stopped
 
 volumes:
