@@ -29,7 +29,21 @@ The footer shows two versions:
   out, from the deployer sidecar. "Behind" shows a **Deploy latest** button
   (needs `DEPLOY_TOKEN`).
 
-## How a mint works
+## What you can mint
+
+- **A counter** — drop a file. Numeric name (free) or a **named asset** (4–12
+  uppercase letters not starting with A, or `PARENT.subasset`; Core burns
+  0.5 XCP for a name, 0.25 for a subasset). Supply and divisibility are yours
+  to set; the default is 1, indivisible.
+- **A plain asset, no counter** — leave the file out. Same name/supply options;
+  one ordinary Counterparty issuance, signed by the wallet and relayed.
+
+Fees default to a custom **0.3 sat/vB** (your own node must relay that low;
+public nodes generally want ≥ 1). Economy/Standard/Fast come from mempool.space.
+An estimate of the commit and reveal fees updates as you change the file and
+rate; the exact figures from Core replace it once composed.
+
+## How a counter mint works
 
 1. **Compose.** The page lists the address's coins (mempool.space), drops any at
    or under 1,000 sats or carrying an attached asset balance, and asks Core to

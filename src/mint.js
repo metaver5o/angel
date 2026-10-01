@@ -293,6 +293,28 @@ export function buildRevealPsbt(compose, commitTxid, commitIndex, commitValue, c
   return bytesToHex(tx.toPSBT())
 }
 
+/**
+ * A PSBT from a plain Counterparty compose — no envelope, no surgery. For an
+ * asset issued without a file: Core's finished transaction, with the prevouts
+ * from its own `lock_scripts` / `inputs_values` so the wallet can sign it.
+ */
+export function buildPlainPsbt(compose) {
+  const core = RawTx.decode(hexToBytes(compose.rawtransaction))
+  const tx = new Transaction({ allowUnknownOutputs: true, version: core.version, lockTime: core.lockTime })
+  core.inputs.forEach((input, i) => {
+    const script = compose.lock_scripts?.[i], value = compose.inputs_values?.[i]
+    if (script === undefined || value === undefined)
+      throw new Error(`Core returned no prevout for input ${i}; the transaction cannot be signed safely.`)
+    tx.addInput({
+      txid: input.txid, index: input.index, sequence: input.sequence,
+      witnessUtxo: { script: hexToBytes(script), amount: BigInt(value) },
+      sighashType: SigHash.ALL,
+    })
+  })
+  for (const o of core.outputs) tx.addOutput({ script: o.script, amount: o.amount })
+  return bytesToHex(tx.toPSBT())
+}
+
 function fromPsbt(hex) {
   return Transaction.fromPSBT(hexToBytes(hex), { allowUnknownInputs: true, allowUnknownOutputs: true, allowLegacyWitnessUtxo: true })
 }
