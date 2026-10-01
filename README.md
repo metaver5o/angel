@@ -38,6 +38,17 @@ The footer shows two versions:
 - **A plain asset, no counter** — tick *Without counter* in the Asset step
   (the file step disappears). Same name/supply options;
   one ordinary Counterparty issuance, signed by the wallet and relayed.
+- **A reinscription** — *Reinscribe an asset you own*: a new file on an
+  existing asset (named, numeric or subasset). Composed as a reissuance with
+  quantity 0 and the asset's own divisibility, so supply and locks are
+  untouched; no XCP. Same commit/reveal path as a counter.
+
+Any name you type is looked up on Counterparty and the page shows what the
+connected address can do with it: whether you own it, whether its supply and
+description are locked, whether it can be reinscribed or have supply added,
+and for a subasset whether you own the parent. A named asset that already
+exists is only offered as a reissue to its owner (no XCP burn); anything
+else is blocked before composing.
 
 Fees default to a custom **0.3 sat/vB** (your own node must relay that low;
 public nodes generally want ≥ 1). Economy/Standard/Fast come from mempool.space.

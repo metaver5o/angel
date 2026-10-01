@@ -162,6 +162,12 @@
   .field .hint { font-size: 13px; color: var(--dim) }
   .field .hint.bad { color: var(--red) }
   .field-row { display: flex; flex-direction: column; gap: 10px }
+  .rights { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 14px }
+  .rights div { display: flex; gap: 8px; align-items: baseline }
+  .rights .y { color: var(--green); font-weight: 600 }
+  .rights .n { color: var(--red); font-weight: 600 }
+  .rights .m { color: var(--dim) }
+  .rights code { font-family: var(--mono); font-size: 12px; word-break: break-all }
   .check { display: flex; align-items: center; gap: 10px; font-size: 15px; min-height: 44px; cursor: pointer }
   .check input { width: 20px; height: 20px; accent-color: var(--copper) }
 
@@ -236,13 +242,15 @@
     <div class="rows" id="assetModes">
       <button class="tier sel" data-mode="numeric"><span class="radio"></span><span><div class="t">Numeric name</div><div class="d">Drawn at random, e.g. A1654244359… · free</div></span></button>
       <button class="tier" data-mode="named"><span class="radio"></span><span><div class="t">Named asset</div><div class="d">4–12 letters, or PARENT.subasset · burns 0.5 XCP (0.25 for a subasset)</div></span></button>
+      <button class="tier" data-mode="reinscribe"><span class="radio"></span><span><div class="t">Reinscribe an asset you own</div><div class="d">Put a new file on an existing asset · supply untouched · no XCP</div></span></button>
     </div>
     <div class="field" id="assetNameField" hidden>
       <label class="k" for="assetName">Name</label>
       <input type="text" id="assetName" placeholder="GUARDIAN" autocapitalize="characters" autocomplete="off" spellcheck="false" />
-      <div class="hint" id="assetNameHint">Uppercase letters only, can't start with A. Subassets: PARENT.name (you must own PARENT).</div>
+      <div class="hint" id="assetNameHint"></div>
+      <div class="rights" id="assetRights" hidden></div>
     </div>
-    <div class="field-row">
+    <div class="field-row" id="supplyRow">
       <div class="field">
         <label class="k" for="supply">Supply</label>
         <input type="number" id="supply" inputmode="numeric" min="0" step="1" value="1" />
@@ -311,7 +319,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.5.0'
+const VERSION = '0.6.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -640,32 +648,123 @@ function setFile(f) {
 function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(2) + ' MB' }
 
 // ---------------------------------------------------------------------------
-// Asset: numeric (drawn at mint time) or named; supply; divisibility
+// Asset: numeric (drawn at mint time), named, or reinscribe one you own.
+//
+// Any name typed is looked up on Counterparty so the page can say what the
+// connected address may do with it: a named asset that already exists can only
+// be reissued by its owner (and burns nothing); a subasset needs its parent
+// owned; a reinscription needs the asset owned and its description unlocked.
 // ---------------------------------------------------------------------------
 const NAMED_RE = /^[B-Z][A-Z]{3,11}$/
+const NUMERIC_RE = /^A\d{17,20}$/
 const SUBASSET_RE = /^[B-Z][A-Z]{3,11}\.[a-zA-Z0-9.\-_@!]+$/
 const nameEl = document.getElementById('assetName')
 const supplyEl = document.getElementById('supply')
 const divisibleEl = document.getElementById('divisible')
+const noCounterEl = document.getElementById('noCounter')
 
-/** The name to issue as typed (parent uppercased), '' when empty, null for "draw a numeric one". */
+/** The name typed (parent uppercased), '' when empty, null in numeric mode. */
 function assetName() {
-  if (state.assetMode !== 'named') return null
+  if (state.assetMode === 'numeric') return null
   const raw = nameEl.value.trim()
   const [parent, ...sub] = raw.split('.')
   return sub.length ? `${parent.toUpperCase()}.${sub.join('.')}` : raw.toUpperCase()
 }
-function isSubasset(name) { return !!name && name.includes('.') }
-/** XCP burned by Core for the name: 0.5 for a named asset, 0.25 for a subasset. */
-function nameCostXcp() { const n = assetName(); return !n ? 0 : isSubasset(n) ? 0.25 : 0.5 }
+const isSubasset = (name) => !!name && name.includes('.')
+const parentOf = (name) => name.split('.')[0]
+function validName(n) { return NAMED_RE.test(n) || SUBASSET_RE.test(n) || NUMERIC_RE.test(n) }
+
+// Lookups, cached by name. `undefined` = never asked, null = no such asset.
+const lookups = new Map()
+let lookupTimer = null
+async function lookupAsset(name) {
+  if (lookups.has(name)) return lookups.get(name)
+  lookups.set(name, 'loading')
+  let info = null
+  try {
+    const r = await fetch(`${state.cp}/assets/${encodeURIComponent(name)}`)
+    const body = await r.json().catch(() => ({}))
+    if (r.ok && body.result?.asset) info = body.result
+    else if (r.status !== 404) throw new Error(body.error || `Counterparty said ${r.status}`)
+  } catch (e) {
+    lookups.delete(name)       // transient: ask again next time
+    throw e
+  }
+  lookups.set(name, info)
+  return info
+}
+/** Kick off the lookups a name needs (itself, and its parent for a subasset); re-render when they land. */
+function scheduleLookups() {
+  clearTimeout(lookupTimer)
+  const n = assetName()
+  if (!n || !validName(n) || !state.cp) return
+  lookupTimer = setTimeout(async () => {
+    const names = isSubasset(n) ? [n, parentOf(n)] : [n]
+    await Promise.all(names.map(x => lookupAsset(x).catch(() => null)))
+    renderAssetSummary()
+  }, 350)
+}
+
+/**
+ * What the connected address may do with the named asset, from the lookup.
+ * `info` undefined/'loading' = not known yet.
+ */
+function rightsFor(name) {
+  const info = lookups.get(name)
+  if (info === undefined || info === 'loading') return { known: false }
+  if (info === null) return { known: true, exists: false }
+  const me = state.wallet?.address
+  return {
+    known: true, exists: true, info,
+    owned: !!me && info.owner === me,
+    supplyLocked: !!info.locked,
+    descriptionLocked: !!info.description_locked,
+  }
+}
+
+/** XCP Core burns for the name: 0.5 for a new named asset, 0.25 for a new subasset, nothing otherwise. */
+function nameCostXcp() {
+  const n = assetName()
+  if (!n || state.assetMode !== 'named' || NUMERIC_RE.test(n)) return 0
+  const r = rightsFor(n)
+  if (r.known && r.exists) return 0            // a reissue
+  return isSubasset(n) ? 0.25 : 0.5
+}
+
+/** Why the asset step can't proceed, or ''. */
 function assetProblem() {
-  if (state.assetMode !== 'named') return ''
+  if (state.assetMode === 'numeric') return ''
   const n = assetName()
   if (!n) return 'Enter a name.'
   if (n.length > 250) return 'Too long.'
-  if (!NAMED_RE.test(n) && !SUBASSET_RE.test(n)) return 'Names are 4–12 uppercase letters (not starting with A), or PARENT.subasset.'
+  if (state.assetMode === 'named' && !NAMED_RE.test(n) && !SUBASSET_RE.test(n)) return 'Names are 4–12 uppercase letters (not starting with A), or PARENT.subasset.'
+  if (state.assetMode === 'reinscribe' && !validName(n)) return 'That is not a valid asset name.'
+  if (!state.cp) return 'No Counterparty node to look the name up on.'
+  const r = rightsFor(n)
+  if (!r.known) return 'Checking the name on Counterparty…'
+  if (state.assetMode === 'reinscribe') {
+    if (!r.exists) return `${n} does not exist.`
+    if (!state.wallet) return 'Connect the wallet that owns it.'
+    if (!r.owned) return `${n} is owned by another address, so it cannot be reinscribed from this one.`
+    if (r.descriptionLocked) return `${n}'s description is locked — no new file can ever be put on it.`
+    return ''
+  }
+  // named
+  if (r.exists) {
+    if (!state.wallet) return `${n} exists — connect the wallet that owns it to reissue.`
+    if (!r.owned) return `${n} is taken (owned by another address).`
+    if (r.supplyLocked && supplyRaw() !== '0') return `${n}'s supply is locked; it can only be reissued with supply 0.`
+  }
+  if (isSubasset(n)) {
+    const p = rightsFor(parentOf(n))
+    if (!p.known) return 'Checking the parent asset…'
+    if (!p.exists) return `${parentOf(n)} does not exist, so it cannot have subassets.`
+    if (!state.wallet) return 'Connect the wallet that owns the parent.'
+    if (!p.owned) return `You don't own ${parentOf(n)}, so you cannot issue ${n}.`
+  }
   return ''
 }
+
 /** Supply in Core's raw units (×1e8 when divisible), as a string, or null when invalid. */
 function supplyRaw() {
   const s = supplyEl.value.trim()
@@ -673,28 +772,70 @@ function supplyRaw() {
   const n = BigInt(s) * (divisibleEl.checked ? 100000000n : 1n)
   return n <= 9223372036854775807n ? n.toString() : null
 }
+const shortAddr = (a) => a ? a.slice(0, 8) + '…' + a.slice(-6) : ''
+
+function renderRights(n) {
+  const el = document.getElementById('assetRights')
+  const r = n && validName(n) ? rightsFor(n) : null
+  const rows = []
+  const yn = (ok, yes, no) => `<span class="${ok ? 'y' : 'n'}">${ok ? yes : no}</span>`
+  if (r?.known && r.exists) {
+    const i = r.info
+    rows.push(`<div>${yn(r.owned, 'You own it', 'Owned by someone else')}<span class="m">owner <code>${escapeHtml(shortAddr(i.owner))}</code></span></div>`)
+    rows.push(`<div>${yn(!r.supplyLocked, 'Supply open', 'Supply locked')}<span class="m">${escapeHtml(fmtAmt(Number(i.supply) / (i.divisible ? 1e8 : 1)))} · ${i.divisible ? 'divisible' : 'indivisible'}</span></div>`)
+    rows.push(`<div>${yn(!r.descriptionLocked, 'Description open', 'Description locked')}<span class="m">${i.mime_type && i.mime_type !== 'text/plain' ? escapeHtml(i.mime_type) + ' inscribed' : i.description ? 'has a description' : 'no description'}</span></div>`)
+    const can = r.owned && !r.descriptionLocked
+    rows.push(`<div>${yn(can, 'Can reinscribe', 'Cannot reinscribe')}${r.owned ? `<span class="m">${yn(!r.supplyLocked, 'can add supply', 'cannot add supply')}</span>` : ''}</div>`)
+  } else if (r?.known && !r.exists) {
+    rows.push(state.assetMode === 'named'
+      ? `<div><span class="y">Available</span><span class="m">new asset · burns ${isSubasset(n) ? 0.25 : 0.5} XCP</span></div>`
+      : `<div><span class="n">No such asset</span></div>`)
+  }
+  if (r && isSubasset(n)) {
+    const p = rightsFor(parentOf(n))
+    if (p.known) rows.push(`<div>${p.exists ? yn(p.owned, `You own ${escapeHtml(parentOf(n))}`, `${escapeHtml(parentOf(n))} is owned by someone else`) : `<span class="n">${escapeHtml(parentOf(n))} does not exist</span>`}</div>`)
+  }
+  el.hidden = rows.length === 0
+  el.innerHTML = rows.join('')
+}
+
 function renderAssetSummary() {
-  const n = assetName(), problem = assetProblem()
-  document.getElementById('assetNameField').hidden = state.assetMode !== 'named'
-  nameEl.classList.toggle('bad', !!problem && !!nameEl.value)
+  const mode = state.assetMode, n = assetName(), problem = assetProblem()
+  const reinscribe = mode === 'reinscribe'
+  if (reinscribe) noCounterEl.checked = false
+  document.getElementById('assetNameField').hidden = mode === 'numeric'
+  document.getElementById('supplyRow').hidden = reinscribe
+  nameEl.placeholder = reinscribe ? 'GUARDIAN or A1654244359…' : 'GUARDIAN'
+  const typedBad = !!problem && !!nameEl.value && !/^Checking/.test(problem)
+  nameEl.classList.toggle('bad', typedBad)
   const hint = document.getElementById('assetNameHint')
-  hint.textContent = problem && nameEl.value ? problem : 'Uppercase letters only, can\'t start with A. Subassets: PARENT.name (you must own PARENT).'
-  hint.classList.toggle('bad', !!problem && !!nameEl.value)
-  document.getElementById('sumAsset').textContent = state.assetMode === 'numeric' ? 'numeric (free)' : (n ? `${n} · ${nameCostXcp()} XCP` : 'named · 0.5 XCP')
-  document.getElementById('sumSupply').textContent = (supplyRaw() === null ? '?' : supplyEl.value.trim()) + (divisibleEl.checked ? ' · divisible' : '')
+  hint.textContent = problem && nameEl.value ? problem
+    : reinscribe ? 'Any asset this address owns: named, numeric or subasset.'
+    : 'Uppercase letters only, can\'t start with A. Subassets: PARENT.name (you must own PARENT).'
+  hint.classList.toggle('bad', typedBad)
+  renderRights(n)
+  scheduleLookups()
+
+  const r = n ? rightsFor(n) : null
+  document.getElementById('sumAsset').textContent = mode === 'numeric' ? 'numeric (free)'
+    : !n ? (reinscribe ? 'reinscribe · pick an asset' : 'named · 0.5 XCP')
+    : reinscribe ? `${n} · reinscribe`
+    : r?.known && r.exists ? `${n} · reissue (yours)` : `${n} · ${nameCostXcp()} XCP`
+  document.getElementById('sumSupply').textContent = reinscribe ? 'unchanged'
+    : (supplyRaw() === null ? '?' : supplyEl.value.trim()) + (divisibleEl.checked ? ' · divisible' : '')
   document.getElementById('sumType').textContent = noCounterEl.checked ? 'plain issuance · no counter'
-    : state.file ? 'counter · native envelope' : 'counter (needs a file)'
+    : state.file ? (reinscribe ? 'reinscription · native envelope' : 'counter · native envelope') : (reinscribe ? 'reinscription (needs a file)' : 'counter (needs a file)')
   document.getElementById('fileCard').hidden = noCounterEl.checked
+  document.querySelector('#fileCard .opt').hidden = reinscribe
   renderAction()
 }
-const noCounterEl = document.getElementById('noCounter')
 noCounterEl.addEventListener('change', renderAssetSummary)
 document.getElementById('assetModes').addEventListener('click', (e) => {
   const el = e.target.closest('[data-mode]'); if (!el) return
   state.assetMode = el.dataset.mode
   document.querySelectorAll('[data-mode]').forEach(t => t.classList.toggle('sel', t === el))
   renderAssetSummary()
-  if (state.assetMode === 'named') nameEl.focus()
+  if (state.assetMode !== 'numeric') nameEl.focus()
 })
 nameEl.addEventListener('input', renderAssetSummary)
 supplyEl.addEventListener('input', renderAssetSummary)
@@ -772,17 +913,25 @@ async function mint() {
   if (loadPending()) return
   const source = state.wallet.address
   const rate = currentRate()
-  const quantity = supplyRaw()
-  const flow = noCounterEl.checked ? 'plain' : 'counter'
-  if (!rate || quantity === null || assetProblem() || (flow === 'counter' && !state.file)) return
+  const reinscribe = state.assetMode === 'reinscribe'
+  const flow = noCounterEl.checked && !reinscribe ? 'plain' : 'counter'
+  if (!rate || assetProblem() || (flow === 'counter' && !state.file)) return
+  const name = assetName()
+  const existing = name ? rightsFor(name).info : null
+  // A reinscription is a reissuance: quantity 0 and the asset's own
+  // divisibility, or Core refuses it; and no new lock, which would be permanent.
+  // A reissue of an existing named asset keeps its divisibility the same way.
+  const quantity = reinscribe ? '0' : supplyRaw()
+  const divisible = existing ? existing.divisible : divisibleEl.checked
+  if (quantity === null) return
   state.cost = null; state.error = null; state.flow = flow
 
   try {
     setStep('composing')
-    const asset = assetName() || AngelMint.randomNumericAsset()
+    const asset = name || AngelMint.randomNumericAsset()
     const { inputs_set } = await spendableInputs(source)
     const common = {
-      asset, quantity, divisible: String(divisibleEl.checked), lock: 'false',
+      asset, quantity, divisible: String(divisible), lock: 'false',
       sat_per_vbyte: String(rate), verbose: 'true',
       inputs_set, exclude_utxos_with_balances: 'true',
     }
@@ -993,7 +1142,8 @@ function renderAction() {
     return
   }
   const rate = currentRate()
-  const counter = !noCounterEl.checked
+  const reinscribe = state.assetMode === 'reinscribe'
+  const counter = !noCounterEl.checked || reinscribe
   const est = !rate ? null
     : !counter ? { commitFee: Math.ceil(165 * rate), revealFee: 0, total: Math.ceil(165 * rate), revealWeight: 0 }
     : state.file ? estimateCost(state.file.size, AngelMint.guessContentType(state.file), rate) : null
@@ -1002,9 +1152,9 @@ function renderAction() {
   const xcpHave = state.balances?.xcp
   const blocked = pending ? 'Finish or discard the unfinished mint above first.'
     : assetProblem() ? `Asset name: ${assetProblem()} (step 2)`
-    : supplyRaw() === null ? 'Supply must be a whole number (step 2).'
+    : !reinscribe && supplyRaw() === null ? 'Supply must be a whole number (step 2).'
     : xcpNeeded && Number.isFinite(xcpHave) && xcpHave < xcpNeeded ? `A named asset burns ${xcpNeeded} XCP and this address has ${fmtAmt(xcpHave)}.`
-    : counter && !state.file ? 'Choose a file (step 3), or tick "Without counter" in step 2.'
+    : counter && !state.file ? (reinscribe ? 'Choose the new file (step 3).' : 'Choose a file (step 3), or tick "Without counter" in step 2.')
     : !rate ? 'Enter a custom fee rate (step 4), at least 0.1 sat/vB.'
     : tooBig ? `This file would make a ${est.revealWeight.toLocaleString('en-US')} weight-unit reveal, past the 400,000 relay cap. Use a smaller file.` : ''
   el.innerHTML = `${est ? `<div class="summary">
@@ -1013,7 +1163,7 @@ function renderAction() {
       <div><span>Est. total at ${rate} sat/vB</span><b>≈ ${fmtSats(est.total)}</b></div>
       ${xcpNeeded ? `<div><span>Burned for the name</span><b>${xcpNeeded} XCP</b></div>` : ''}
     </div>` : ''}
-    <button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>${counter ? 'Mint Counter' : 'Issue asset (no counter)'}</button>
+    <button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>${reinscribe ? 'Reinscribe' : counter ? 'Mint Counter' : 'Issue asset (no counter)'}</button>
     ${blocked ? `<p class="note">${blocked}</p>` : `<p class="note">${counter
       ? 'Exact fees are shown once composed. Your wallet signs one payment (the commit); the page signs the reveal.'
       : 'One Counterparty issuance, signed by your wallet. No file, no commit/reveal.'}</p>`}`
