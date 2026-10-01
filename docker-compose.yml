@@ -26,7 +26,10 @@ services:
       COUNTER_DATA_DIR: /data
     volumes:
       - angel-data:/data
-      - ./index.html:/app/counters_proto/server/static/index.html:ro
+      # Directory mount (not a single file): the deployer rewrites web/index.html
+      # via git, and single-file bind mounts break on the inode swap. The page is
+      # self-contained, so overlaying the static dir with just it is fine.
+      - ./web:/app/counters_proto/server/static:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
