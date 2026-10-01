@@ -112,6 +112,7 @@
   .deploy-btn { background: var(--bg2); border: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 10px; letter-spacing: .04em; padding: 4px 11px; border-radius: 6px; cursor: pointer; transition: .15s }
   .deploy-btn:hover:not(:disabled) { border-color: var(--copper); color: var(--ink) }
   .deploy-btn:disabled { opacity: .5; cursor: default }
+  .foot-build { margin-top: 8px; font-size: 10.5px; color: var(--faint) }
 
   dialog {
     border: 1px solid var(--line); background: var(--card); color: var(--ink);
@@ -196,6 +197,7 @@
     <span id="vertext">checking version…</span>
     <button class="deploy-btn" id="deployBtn" hidden>Deploy latest</button>
   </div>
+  <div class="foot-build" id="build"></div>
 </footer>
 
 <dialog id="walletModal">
@@ -214,6 +216,12 @@
 // laptop; the Cloudflare tunnel makes it reachable from anywhere (incl. the
 // GitHub Pages copy). ?backend= overrides for testing. NOTE: this trycloudflare
 // hostname is ephemeral — if the tunnel restarts, update DEFAULT_BACKEND here.
+// Build stamp, baked into the page itself (no backend needed to read it).
+// Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
+// git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
+const VERSION = '0.2.0'
+const BUILD_COMMIT = '__COMMIT__'
+
 const DEFAULT_BACKEND = 'https://are-town-mother-zope.trycloudflare.com'
 const BACKEND = new URLSearchParams(location.search).get('backend') || DEFAULT_BACKEND
 const api = (p) => BACKEND + p
@@ -559,6 +567,8 @@ async function doDeploy() {
 }
 
 document.getElementById('deployBtn').addEventListener('click', doDeploy)
+document.getElementById('build').textContent =
+  `build v${VERSION}` + (BUILD_COMMIT.startsWith('__') ? '' : ` · ${BUILD_COMMIT}`)
 loadVersion()
 // Re-check so a new push shows up as "behind + Deploy latest" without a reload.
 setInterval(loadVersion, 30000)

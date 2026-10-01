@@ -29,6 +29,8 @@ jobs:
         run: |
           mkdir -p _site
           cp web/index.html _site/index.html
+          # Stamp the deployed commit into the page's build footer.
+          sed -i "s/__COMMIT__/${GITHUB_SHA::7}/" _site/index.html
       - uses: actions/configure-pages@v5
         with:
           enablement: true
