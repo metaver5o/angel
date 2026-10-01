@@ -210,7 +210,12 @@
 // Config — talks to a counters-mint backend. Same origin by default (this page
 // is served from the backend's static dir); override with ?backend=https://host
 // ---------------------------------------------------------------------------
-const BACKEND = new URLSearchParams(location.search).get('backend') || ''
+// Where the browser sends /mint, /status, /__version. The backend runs on the
+// laptop; the Cloudflare tunnel makes it reachable from anywhere (incl. the
+// GitHub Pages copy). ?backend= overrides for testing. NOTE: this trycloudflare
+// hostname is ephemeral — if the tunnel restarts, update DEFAULT_BACKEND here.
+const DEFAULT_BACKEND = 'https://are-town-mother-zope.trycloudflare.com'
+const BACKEND = new URLSearchParams(location.search).get('backend') || DEFAULT_BACKEND
 const api = (p) => BACKEND + p
 
 const state = {
