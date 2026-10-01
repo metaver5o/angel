@@ -5,7 +5,10 @@
 #             deployer. One origin behind one tunnel.
 #   deployer  pulls origin/main and hard-resets the working tree. Polls every
 #             60s (so no cron) and backs the in-page Deploy button. web/ is a
-#             live volume mount, so a pull republishes instantly.
+#             live volume mount, so a pull republishes instantly. Also keeps
+#             the activity/error log the page reports to: logs/events.jsonl
+#             (gitignored) — `tail -f logs/events.jsonl` or
+#             `docker compose logs -f deployer`.
 #   tunnel    cloudflared quick tunnel -> proxy. Public https URL in its logs.
 #
 # The mint itself is client-side: the page composes through /cp, the wallet
@@ -41,6 +44,7 @@ services:
       GITHUB_REPO: metaver5o/angel
       POLL_SECONDS: "60"
       DEPLOY_TOKEN: ${DEPLOY_TOKEN:-}
+      EVENT_LOG: /repo/logs/events.jsonl
     volumes:
       # The repo itself (rw): a pull here updates web/, which the proxy serves
       # live. .env is untracked, so reset --hard never touches it.

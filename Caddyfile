@@ -4,8 +4,16 @@
 #                            CORS so the GitHub Pages copy can use it too. Only
 #                            the handful of routes the mint needs are let through.
 #   /__version /__deploy  -> deployer sidecar (footer version + Deploy button)
+#   /__event /__events    -> deployer sidecar (page activity + error log)
 #   everything else       -> the page, served straight from web/
+#
+# Every request is logged as JSON to stdout: `docker compose logs -f proxy`.
 :80 {
+	log {
+		output stdout
+		format json
+	}
+
 	@cp path /cp/*
 	handle @cp {
 		header Access-Control-Allow-Origin *
@@ -29,7 +37,7 @@
 		}
 	}
 
-	@deploy path /__version /__deploy
+	@deploy path /__version /__deploy /__event /__events /__errors
 	handle @deploy {
 		reverse_proxy deployer:8090
 	}

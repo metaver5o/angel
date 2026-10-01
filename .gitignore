@@ -4,5 +4,8 @@
 # `npm install` for the one-time bundle (web/mint.js is committed)
 node_modules/
 
+# Activity + error log written by the deployer sidecar
+logs/
+
 .DS_Store
 *.log

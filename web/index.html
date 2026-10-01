@@ -328,7 +328,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.7.0'
+const VERSION = '0.8.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -368,6 +368,34 @@ const state = {
   error: null,
 }
 const explorer = () => EXPLORERS[state.network] || EXPLORERS.mainnet
+
+// ---------------------------------------------------------------------------
+// Activity + error reporting. Every notable thing a visitor does, and every
+// failure, is POSTed to the deployer's /__event (logs/events.jsonl on the
+// stack; errors alone at /__errors). Fire-and-forget: never blocks, never
+// throws. JS exceptions and unhandled rejections are reported too.
+// ---------------------------------------------------------------------------
+const SESSION = Math.random().toString(36).slice(2, 10)
+function track(event, data = {}) {
+  try {
+    const body = JSON.stringify({
+      event, data, session: SESSION,
+      build: VERSION + (BUILD_COMMIT.startsWith('__') ? '' : '+' + BUILD_COMMIT),
+      page: location.hostname, wallet: state.wallet?.kind || null, address: state.wallet?.address || null,
+      ua: navigator.userAgent.slice(0, 120),
+    })
+    // text/plain: no CORS preflight from the Pages origin; the deployer parses JSON regardless.
+    fetch(BACKEND + '/__event', { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true }).catch(() => {})
+  } catch {}
+}
+function trackError(where, err, extra = {}) {
+  track('error', {
+    where, message: err?.message || String(err), code: err?.code ?? null,
+    stack: String(err?.stack || '').split('\n').slice(0, 4).join('\n'), ...extra,
+  })
+}
+window.addEventListener('error', (e) => trackError('window', e.error || e.message, { file: e.filename, line: e.lineno }))
+window.addEventListener('unhandledrejection', (e) => trackError('promise', e.reason))
 
 // ---------------------------------------------------------------------------
 // Wallets — the two that speak Counterparty. Both sign the commit as a PSBT and
@@ -450,11 +478,13 @@ async function connect(kind) {
   state.wallet = { kind, address }
   state.reinscribeAsset = null
   localStorage.setItem('angel:wallet', kind)
+  track('wallet_connected', { kind })
   renderWallet(); renderAction(); renderPending(); renderAssetSummary()
   loadBalances()
 }
 async function disconnect() {
   const kind = state.wallet?.kind
+  track('wallet_disconnected', { kind })
   state.wallet = null; state.balances = null; state.reinscribeAsset = null
   owned.address = null; owned.list = null
   localStorage.removeItem('angel:wallet')
@@ -536,6 +566,7 @@ async function broadcast(rawHex) {
     try { return await go() }
     catch (e) { if (already.test(e.message)) return expected; errors.push(e.message) }
   }
+  track('broadcast_failed', { txid: expected, errors })
   throw new Error(`Could not relay ${expected}. It is signed, so it can be sent again.\n${errors.join('\n')}`)
 }
 
@@ -569,6 +600,7 @@ async function loadBalances() {
   ])
   if (state.wallet?.address !== addr) return   // changed while loading
   state.balances = { btc, xcp }
+  if (Number.isNaN(btc) || Number.isNaN(xcp)) track('balance_unavailable', { btc: !Number.isNaN(btc), xcp: !Number.isNaN(xcp), cp: state.cp })
   renderWallet()
 }
 const fmtAmt = (n, max = 8) => Number.isNaN(n) ? 'unavailable'
@@ -592,6 +624,8 @@ async function boot() {
     } catch {}
   }
   if (!state.cp) { pill.textContent = 'no counterparty node'; pill.className = 'net-pill off' }
+  track('page_view', { network: state.network, node: !state.cp ? 'none' : state.cpIsOwn ? 'own' : 'public', pending: !!loadPending() })
+  if (!state.cp) trackError('boot', new Error('no Counterparty node reachable'), { stack: STACK_CP, public: PUBLIC_CP })
   await loadFees()
   const prev = localStorage.getItem('angel:wallet')
   if (prev && WALLETS[prev]?.present()) {
@@ -645,6 +679,7 @@ function setFile(f) {
   }
   preview.hidden = false
   const mime = AngelMint.guessContentType(f)
+  track('file_chosen', { name: f.name, size: f.size, mime })
   document.getElementById('pfn').textContent = f.name
   document.getElementById('pd').textContent = `${mime} · ${fmtBytes(f.size)}`
   document.getElementById('sumFile').textContent = f.name
@@ -700,6 +735,7 @@ async function lookupAsset(name) {
     else if (r.status !== 404) throw new Error(body.error || `Counterparty said ${r.status}`)
   } catch (e) {
     lookups.delete(name)       // transient: ask again next time
+    trackError('asset_lookup', e, { name })
     throw e
   }
   lookups.set(name, info)
@@ -734,6 +770,7 @@ async function loadOwned() {
   } catch (e) {
     if (owned.address !== address) return
     owned.error = e.message || String(e)
+    trackError('owned_assets', e)
   }
   renderOwned()
   renderAssetSummary()
@@ -995,6 +1032,7 @@ async function mint() {
   const divisible = existing ? existing.divisible : divisibleEl.checked
   if (quantity === null) return
   state.cost = null; state.error = null; state.flow = flow
+  track('mint_start', { flow, mode: state.assetMode, asset: name || null, rate, quantity, divisible, size: state.file?.size ?? null, mime: state.file ? AngelMint.guessContentType(state.file) : null })
 
   try {
     setStep('composing')
@@ -1009,15 +1047,18 @@ async function mint() {
     if (state.flow === 'plain') {
       const compose = await cpCompose(source, 'issuance', common)
       state.cost = { commitFee: compose.btc_fee, revealFee: 0, total: compose.btc_fee }
+      track('composed', { flow, asset, fee: compose.btc_fee, inputs: compose.inputs_values.length })
       setStep('signing-commit')
       const signInputs = { [source]: compose.inputs_values.map((_, i) => i) }
       const signed = await w.signPsbt(AngelMint.buildPlainPsbt(compose), signInputs)
       if (!signed) throw new Error('The wallet returned no signed PSBT.')
       const tx = AngelMint.finalize(signed)
       setStep('broadcasting-commit')
+      track('issuance_signed', { asset, txid: tx.txid })
       const txid = await broadcast(tx.hex)
       if (!(await explorerKnows(txid)))
         throw new Error(`The relay accepted the transaction (${txid}) but no mempool has seen it. Nothing was spent; try again.`)
+      track('mint_done', { flow, asset, txid })
       state.result = { asset, txid }
       setStep('done')
       loadBalances()
@@ -1034,12 +1075,14 @@ async function mint() {
     const revealKey = AngelMint.newRevealKey()
     const plan = AngelMint.planMint(compose, revealKey, rate)
     state.cost = { commitFee: plan.commitFee, revealFee: plan.revealFee, total: plan.commitFee + plan.revealFee }
+    track('composed', { flow, asset, commitFee: plan.commitFee, revealFee: plan.revealFee, revealWeight: plan.revealWeight, inputs: plan.inputCount, commitAddress: plan.commit.address })
 
     setStep('signing-commit')
     const signInputs = { [source]: Array.from({ length: plan.inputCount }, (_, i) => i) }
     const signed = await w.signCommit(plan.commitPsbt, signInputs, { address: plan.commit.address, valueSats: plan.commitValue, asset })
     if (!signed) throw new Error('The wallet returned no signed PSBT.')
     const commit = AngelMint.finalize(signed)
+    track('commit_signed', { asset, txid: commit.txid })
 
     const revealPsbt = AngelMint.buildRevealPsbt(compose, commit.txid, plan.commitIndex, plan.commitValue, plan.commit)
     const pending = {
@@ -1050,9 +1093,11 @@ async function mint() {
 
     setStep('broadcasting-commit')
     await broadcast(commit.hex)
+    track('commit_broadcast', { asset, txid: commit.txid })
 
     await finishReveal(pending)
   } catch (e) {
+    trackError('mint', e, { flow, step: state.step, pending: !!loadPending() })
     state.error = e?.message || String(e)
     setStep('error')
     renderPending()
@@ -1071,6 +1116,7 @@ async function finishReveal(pending) {
     throw new Error(`The relay accepted the reveal (${txid}) but no mempool has seen it. The commit is untouched — use Finish reveal to send it again.`)
 
   localStorage.removeItem(PENDING_KEY)
+  track('mint_done', { flow: 'counter', asset: pending.asset, commitTxid: pending.commitTxid, revealTxid: txid })
   state.result = { asset: pending.asset, commitTxid: pending.commitTxid, revealTxid: txid }
   setStep('done')
   renderPending()
@@ -1097,7 +1143,7 @@ function renderWallet() {
     el.querySelectorAll('[data-connect]').forEach(b => b.onclick = async () => {
       b.disabled = true
       try { await connect(b.dataset.connect) }
-      catch (err) { alert('Connect failed: ' + (err?.message || err)); b.disabled = false }
+      catch (err) { trackError('connect', err, { kind: b.dataset.connect }); alert('Connect failed: ' + (err?.message || err)); b.disabled = false }
     })
     return
   }
@@ -1135,12 +1181,14 @@ function renderPending() {
     <button class="btn primary" id="finish">Finish reveal</button>
     <button class="btn quiet" id="discardPending">Discard (forget this mint)</button>`
   el.querySelector('#finish').onclick = async () => {
-    state.error = null; state.result = null
+    state.error = null; state.result = null; state.flow = 'counter'
+    track('pending_resume', { asset: p.asset, commitTxid: p.commitTxid })
     try { await finishReveal(p) }
-    catch (e) { state.error = e?.message || String(e); setStep('error'); renderPending() }
+    catch (e) { trackError('finish_reveal', e, { asset: p.asset, commitTxid: p.commitTxid }); state.error = e?.message || String(e); setStep('error'); renderPending() }
   }
   el.querySelector('#discardPending').onclick = () => {
     if (!confirm('Forget this mint? The commit output can only be spent with the key saved here. Copy the reveal key first if you might want it:\n\n' + p.revealKey)) return
+    track('pending_discarded', { asset: p.asset, commitTxid: p.commitTxid })
     localStorage.removeItem(PENDING_KEY); renderPending(); renderAction()
   }
 }
@@ -1265,6 +1313,7 @@ async function doDeploy() {
   let token = localStorage.getItem('angel:deploytoken') || ''
   if (!token) { token = prompt('Deploy token:') || ''; if (token) localStorage.setItem('angel:deploytoken', token) }
   btn.disabled = true; btn.textContent = 'Deploying…'
+  track('deploy_clicked')
   try {
     const r = await fetch(BACKEND + '/__deploy', { method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {} })
     const d = await r.json()
@@ -1275,6 +1324,7 @@ async function doDeploy() {
     text.textContent = d.changed ? `deployed ${d.from} → ${d.to} ✓` : 'already latest ✓'
     setTimeout(() => location.reload(), 1400)
   } catch (e) {
+    trackError('deploy', e)
     btn.disabled = false; btn.textContent = 'Retry deploy'; text.textContent = 'deploy failed: ' + (e.message || e)
   }
 }

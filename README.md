@@ -101,6 +101,31 @@ The two Counterparty browser wallets:
 On connect the page shows the address, the **BTC balance** (mempool.space,
 confirmed + unconfirmed) and the **XCP balance** (Counterparty API).
 
+## Activity and error logs
+
+The page reports what visitors do and everything that fails to the stack's
+deployer sidecar, which appends one JSON line per event to `logs/events.jsonl`
+(gitignored) and echoes it to its own stdout:
+
+```bash
+tail -f logs/events.jsonl                 # on the host
+docker compose logs -f deployer           # same stream
+docker compose logs -f proxy              # every HTTP request, as JSON (Caddy)
+```
+
+Events: `page_view` (network, which node), `wallet_connected` /
+`wallet_disconnected`, `file_chosen`, `mint_start`, `composed` (fees),
+`commit_signed`, `commit_broadcast`, `issuance_signed`, `mint_done`,
+`pending_resume` / `pending_discarded`, `deploy_clicked`, `balance_unavailable`,
+`broadcast_failed`, and **`error`** — from the wallet (connect, signing
+refusals), Counterparty (compose, lookups), relays, the deployer itself
+(`deployer_error`), and any uncaught JS exception or rejected promise. Each
+carries the build, a per-tab session id, the wallet kind and address.
+
+Over HTTP: `GET /__events?n=200` (needs `X-Deploy-Token`) for everything, and
+`GET /__errors?since=<unix ts>` (no token; errors only, with IP, address and
+user agent stripped) for a watcher that just wants failures.
+
 ## Run the staging stack (Docker)
 
 ```bash
