@@ -1,37 +1,35 @@
 # Angel — Guardian Set mint, staging stack.
 #
-#   app       counters-mint backend (the real /mint/* PSBT engine), serving
-#             Angel's single-page mint at / (index.html mounted over its static
-#             shell). XCP runs locally; BTC comes from a public RPC (see .env).
+#   proxy     Caddy: serves web/ as the site, proxies /cp/* to your Counterparty
+#             Core node (CP_UPSTREAM in .env) and /__version + /__deploy to the
+#             deployer. One origin behind one tunnel.
 #   deployer  pulls origin/main and hard-resets the working tree. Polls every
-#             60s (so no cron) and exposes /__version + /__deploy for the
-#             in-page Deploy button. index.html is a live volume mount, so a
-#             pull republishes instantly with no image rebuild.
-#   proxy     Caddy front door: /__version + /__deploy -> deployer, else -> app.
-#             Lets a single quick tunnel serve both on one origin.
+#             60s (so no cron) and backs the in-page Deploy button. web/ is a
+#             live volume mount, so a pull republishes instantly.
 #   tunnel    cloudflared quick tunnel -> proxy. Public https URL in its logs.
 #
+# The mint itself is client-side: the page composes through /cp, the wallet
+# signs the commit, the page signs the reveal. No mint backend.
+#
 # Usage:
-#   cp .env.example .env     # set DEPLOY_TOKEN + backend endpoints
-#   docker compose up -d --build
+#   cp .env.example .env     # CP_UPSTREAM + DEPLOY_TOKEN
+#   docker compose up -d
 #   docker compose logs -f tunnel   # grab the https://*.trycloudflare.com URL
 
 services:
-  app:
-    build:
-      context: ../counters-mint
-    command: ["server", "--no-index", "--host", "0.0.0.0", "--port", "8082"]
-    env_file: .env
+  proxy:
+    image: caddy:2-alpine
     environment:
-      COUNTER_DATA_DIR: /data
+      CP_UPSTREAM: ${CP_UPSTREAM:-host.docker.internal:4000}
     volumes:
-      - angel-data:/data
-      # Directory mount (not a single file): the deployer rewrites web/index.html
-      # via git, and single-file bind mounts break on the inode swap. The page is
-      # self-contained, so overlaying the static dir with just it is fine.
-      - ./web:/app/counters_proto/server/static:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Directory mount (not a single file): the deployer rewrites web/ via git,
+      # and single-file bind mounts break on the inode swap.
+      - ./web:/srv:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - deployer
     restart: unless-stopped
 
   deployer:
@@ -44,18 +42,9 @@ services:
       POLL_SECONDS: "60"
       DEPLOY_TOKEN: ${DEPLOY_TOKEN:-}
     volumes:
-      # The repo itself (rw): a pull here updates the host's index.html, which
-      # the app serves live. .env is untracked, so reset --hard never touches it.
+      # The repo itself (rw): a pull here updates web/, which the proxy serves
+      # live. .env is untracked, so reset --hard never touches it.
       - ./:/repo
-    restart: unless-stopped
-
-  proxy:
-    image: caddy:2-alpine
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    depends_on:
-      - app
-      - deployer
     restart: unless-stopped
 
   tunnel:
@@ -67,6 +56,3 @@ services:
     depends_on:
       - proxy
     restart: unless-stopped
-
-volumes:
-  angel-data:

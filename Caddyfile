@@ -1,11 +1,43 @@
-# Single front door for the tunnel: deploy/version endpoints go to the deployer
-# sidecar, everything else to the mint app.
+# Single front door for the tunnel.
+#
+#   /cp/*                 -> your Counterparty Core node (CP_UPSTREAM), with
+#                            CORS so the GitHub Pages copy can use it too. Only
+#                            the handful of routes the mint needs are let through.
+#   /__version /__deploy  -> deployer sidecar (footer version + Deploy button)
+#   everything else       -> the page, served straight from web/
 :80 {
+	@cp path /cp/*
+	handle @cp {
+		header Access-Control-Allow-Origin *
+		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type"
+
+		@preflight method OPTIONS
+		handle @preflight {
+			respond 204
+		}
+
+		# API root (network), compose, balances, relay + lookup of a transaction.
+		@allowed path_regexp ^/cp/v2(/|/addresses/[^/]+/compose/issuance|/addresses/[^/]+/balances(/[^/]+)?|/bitcoin/transactions(/[0-9a-fA-F]{64})?)?$
+		handle @allowed {
+			uri strip_prefix /cp
+			reverse_proxy {$CP_UPSTREAM}
+		}
+
+		handle {
+			respond `{"error":"not allowed"}` 403
+		}
+	}
+
 	@deploy path /__version /__deploy
 	handle @deploy {
 		reverse_proxy deployer:8090
 	}
+
 	handle {
-		reverse_proxy app:8082
+		root * /srv
+		# Always the latest push: wallet-signing bugs on a cached page are hard to see.
+		header Cache-Control no-store
+		file_server
 	}
 }

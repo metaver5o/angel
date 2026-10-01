@@ -28,7 +28,7 @@ jobs:
       - name: Assemble site (frontend only)
         run: |
           mkdir -p _site
-          cp web/index.html _site/index.html
+          cp -r web/. _site/
           # Stamp the deployed commit into the page's build footer.
           sed -i "s/__COMMIT__/${GITHUB_SHA::7}/" _site/index.html
       - uses: actions/configure-pages@v5

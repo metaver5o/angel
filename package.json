@@ -1,0 +1,14 @@
+{
+  "name": "angel-mint",
+  "private": true,
+  "description": "Angel — Guardian Set mint. Single page; `npm run build` bundles web/mint.js from src/.",
+  "scripts": {
+    "build": "esbuild src/mint.js --bundle --format=iife --global-name=AngelMint --target=es2022 --minify --outfile=web/mint.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@scure/btc-signer": "^2.4.1"
+  }
+}

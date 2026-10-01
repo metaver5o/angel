@@ -1,19 +1,23 @@
 # Angel — Guardian Set
 
 A tiny, personal mint for Angel. One page: connect a wallet, drop a file,
-inscribe it on Bitcoin as a numbered Counter (your file in witness data, owned
-through a Counterparty asset, numbered by the chain from zero).
+inscribe it on Bitcoin as a numbered Counter — a **native Counterparty** asset
+whose description is your file, carried in Core's v11 taproot envelope and
+numbered by the chain.
 
-It's a thin front end over the real [`counters-mint`](../counters-mint) backend
-— the same commit/reveal PSBT flow as counters.fun, nothing reimplemented. The
-whole UI is one self-contained `web/index.html` (no build step).
+The mint is client-side. Counterparty Core composes the commit/reveal pair,
+the wallet signs the commit as a PSBT, and the page signs the reveal. There is
+no mint backend; the only server piece is a proxy to a Counterparty node.
 
 ## Where it runs
 
 | | URL | What serves it |
 | --- | --- | --- |
-| **GitHub Pages** | `https://metaver5o.github.io/angel/` | `.github/workflows/pages.yml`, on every push to `main`. Page only; it calls the backend through the tunnel. |
-| **Staging stack** | `https://<random>.trycloudflare.com` (see `docker compose logs -f tunnel`) | The Docker stack below: backend + page on one origin. |
+| **GitHub Pages** | `https://metaver5o.github.io/angel/` | `.github/workflows/pages.yml`, on every push to `main`. Reaches the Counterparty node through the staging tunnel; falls back to the public node. |
+| **Staging stack** | `https://<random>.trycloudflare.com` (see `docker compose logs -f tunnel`) | Caddy serving `web/` and proxying `/cp/*` to your node. |
+
+The header pill shows which node the page found: `mainnet · your node` (the
+stack's) or `mainnet · public node` (api.counterparty.io, rate-limited).
 
 The footer shows two versions:
 
@@ -25,76 +29,95 @@ The footer shows two versions:
   out, from the deployer sidecar. "Behind" shows a **Deploy latest** button
   (needs `DEPLOY_TOKEN`).
 
+## How a mint works
+
+1. **Compose.** The page lists the address's coins (mempool.space), drops any at
+   or under 1,000 sats or carrying an attached asset balance, and asks Core to
+   compose an `issuance` with `encoding=taproot`, `inscription=false`, the file
+   as `description` and those coins as `inputs_set`. Core returns the unsigned
+   commit, the envelope script and the unsigned reveal.
+2. **Re-key.** The envelope leaf's key is swapped for one made for this mint
+   (same length, so Core's fee math still holds), and the commit's internal key
+   becomes the NUMS point. The commit output is then spendable only through the
+   leaf, only with that key.
+3. **Sign the commit.** The commit is rebuilt as a PSBT with full prevouts and
+   `SIGHASH_ALL` and handed to the wallet. For XCP Wallet it is declared as a
+   plain payment (`xcp_signBitcoinPsbt` + payment intent); Horizon signs it as
+   an ordinary PSBT.
+4. **Save, then broadcast.** The reveal PSBT and its key go to `localStorage`
+   *before* the commit is relayed. An interrupted mint shows an "Unfinished
+   mint" box with a **Finish reveal** button; nothing is lost once the commit is
+   on chain.
+5. **Sign and broadcast the reveal.** The page signs the script-path spend and
+   relays it (your node first, then mempool.space), then checks a mempool has
+   actually seen it before calling the mint done.
+
+Why the page signs the reveal rather than the wallet: neither wallet will sign
+a script-path spend of a native Counterparty envelope — it is BTC movement
+they cannot explain. Core's own flow does the same thing (an ephemeral key per
+mint); the difference is this one is kept until the reveal lands. Before
+anything is signed the page also checks that Core built the native envelope
+it asked for, and refuses otherwise.
+
+Limits: a reveal over 400,000 weight units (a file of roughly 390 KB) will not
+relay on the public network, so it is refused before anything is signed.
+
 ## Wallets
 
-Connect first (step 1). The page lists each wallet as ready or not installed:
+The two Counterparty browser wallets:
 
-| Wallet | Connect + balances | Mint |
+| Wallet | Global | Commit signing |
 | --- | --- | --- |
-| XCP Wallet (`window.xcpwallet`) | ✅ | ⛔ not yet (see below) |
-| Unisat | ✅ | ✅ |
-| OKX | ✅ | ✅ |
-| Horizon (`window.HorizonWalletProvider`) | ✅ | ⛔ not yet |
+| XCP Wallet | `window.xcpwallet` | `xcp_signBitcoinPsbt` with a payment intent |
+| Horizon | `window.HorizonWalletProvider` | house `signPsbt` |
 
 On connect the page shows the address, the **BTC balance** (mempool.space,
-confirmed + unconfirmed) and the **XCP balance** (public Counterparty Core API
-at `api.counterparty.io`, read straight from the browser).
-
-**Why XCP Wallet and Horizon can't mint yet:** they only sign PSBTs — there is
-no "send BTC to this address" call — and XCP Wallet refuses to sign BTC movement
-it can't verify. The current backend flow has the wallet pay the commit
-directly, then sign a server-built reveal. Minting through them needs the
-backend to return a commit PSBT (signed with `xcp_signBitcoinPsbt` + a payment
-intent) and a reveal the wallet will accept. That's a `counters-mint` change.
+confirmed + unconfirmed) and the **XCP balance** (Counterparty API).
 
 ## Run the staging stack (Docker)
 
 ```bash
-cp .env.example .env          # BTC_RPC_* / CP_API_URL for your node, DEPLOY_TOKEN
-docker compose up -d --build
+cp .env.example .env          # CP_UPSTREAM = your Counterparty Core v2 API, DEPLOY_TOKEN
+docker compose up -d
 docker compose logs -f tunnel # -> https://something-random.trycloudflare.com
 ```
 
 Services (`docker-compose.yml`):
 
-- **app** — `counters-mint` server with `web/` mounted over its static dir, so
-  the mint page is the site root.
+- **proxy** — Caddy. Serves `web/` as the site (`Cache-Control: no-store`),
+  proxies `/cp/*` to `CP_UPSTREAM` (only the routes the mint needs: API root,
+  `compose/issuance`, balances, `bitcoin/transactions`) with CORS so the Pages
+  copy can use it, and `/__version` + `/__deploy` to the deployer.
 - **deployer** — polls `origin/main` every 60 s and `git reset --hard`s the
   checkout, so a push republishes the page with no rebuild. Also serves
   `/__version` and `/__deploy` for the footer.
-- **proxy** — Caddy; routes `/__version` + `/__deploy` to the deployer, the rest
-  to the app, so one tunnel serves one origin.
 - **tunnel** — cloudflared quick tunnel (no account). New random hostname on
   every restart; for a stable one, set `TUNNEL_TOKEN` and switch to a named
-  tunnel (comment in the compose file).
+  tunnel (comment in the compose file). The Pages copy has the current
+  hostname hardcoded as `TUNNEL_BACKEND` in `web/index.html` — update it when
+  the tunnel restarts.
 
-Note the deployer hard-resets the checkout: don't develop in the clone the
-stack runs from.
+Your node needs Counterparty Core **v11+** (taproot envelopes) with its
+bitcoind, on the network you want to mint on; the page reads the network from
+the node. Note the deployer hard-resets the checkout: don't develop in the
+clone the stack runs from.
 
-## Run the page without Docker
+## Hacking on it
 
-The page is static and talks to any running `counters-mint` server:
+The page is `web/index.html` (no build). The PSBT code is `src/mint.js`,
+bundled with `@scure/btc-signer` into `web/mint.js`, which is committed so
+Pages and the stack serve it as-is:
 
 ```bash
-# in counters-mint/
-counters-proto server --no-index --port 8082
+npm install
+npm run build        # src/mint.js -> web/mint.js
 ```
 
-Open `web/index.html` and point it at the backend:
-
-```
-web/index.html?backend=http://127.0.0.1:8082
-```
-
-Without `?backend=`, the page uses its own origin, except on `github.io` (and
-`file://`), where it uses the tunnel URL hardcoded as `TUNNEL_BACKEND` in
-`web/index.html` — update that when the tunnel restarts.
+To point the page at a different stack: `web/index.html?backend=https://host`.
 
 ## Notes
 
 - **Assets are numeric** (free — just BTC fees). No XCP, no naming, no decisions
   to make. Just mint.
-- **Network** (mainnet/testnet4/signet) comes from the backend's `BTC_NETWORK`;
-  the UI labels it and picks the right wallet provider + explorer automatically.
-- `deploy.sh` is the older cron-based pull-and-rebuild script; the deployer
-  sidecar replaces it.
+- The wallet pays two fees: the commit's (Core's estimate at the chosen rate)
+  and the reveal's (carried in the commit output). Both are shown once composed.

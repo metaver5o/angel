@@ -56,6 +56,7 @@
     color: var(--green); background: var(--green-tint); border-radius: 999px; padding: 4px 11px; white-space: nowrap;
   }
   .net-pill.off { color: var(--dim); background: #f1ece5 }
+  .net-pill.warn { color: #7a5806; background: var(--gold-tint) }
 
   .hero { padding: 18px 0 10px }
   .hero h1 { font-size: 28px; line-height: 1.2; font-weight: 700; margin: 0 0 8px; letter-spacing: -.01em }
@@ -154,10 +155,11 @@
   .step.on .i { border-color: var(--copper); color: var(--copper) }
   .step.ok { color: var(--green); border-color: var(--green); background: var(--green-tint) }
   .step.ok .i { border-color: var(--green); background: var(--green); color: #fff }
-  .alert { padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.45 }
+  .alert { padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.45; word-break: break-word }
   .alert.err { background: var(--red-tint); color: var(--red) }
   .alert.warn { background: var(--gold-tint); color: #7a5806 }
   .alert.ok { background: var(--green-tint); color: var(--green) }
+  .alert code { font-family: var(--mono); font-size: 12px }
   .done h3 { margin: 0 0 4px; color: var(--green); font-size: 22px }
 
   /* footer */
@@ -197,7 +199,7 @@
 <main class="wrap">
   <div class="hero">
     <h1>Mint your Guardian</h1>
-    <p>Connect a wallet, drop a file, mint. Each one is a numbered Counter — a Counterparty asset bound to your file, numbered by the chain.</p>
+    <p>Connect a wallet, drop a file, mint. Each one is a numbered Counter — a native Counterparty asset whose description is your file, numbered by the chain.</p>
   </div>
 
   <!-- 1 · Wallet -->
@@ -212,7 +214,7 @@
     <label class="drop" id="drop">
       <input type="file" id="file" />
       <div class="big">Choose a file to inscribe</div>
-      <div class="sub">image, svg, text, json — anything · tap or drop</div>
+      <div class="sub">image, svg, text, json — anything up to ~390 KB · tap or drop</div>
     </label>
     <div class="preview" id="preview" hidden>
       <div class="thumb" id="thumb"></div>
@@ -237,9 +239,11 @@
     <div class="summary">
       <div><span>Asset</span><b>numeric (free)</b></div>
       <div><span>Supply</span><b>1</b></div>
+      <div><span>Envelope</span><b>counterparty native</b></div>
       <div><span>Fee</span><b id="sumFee">standard</b></div>
       <div><span>File</span><b id="sumFile">none</b></div>
     </div>
+    <div id="pending" class="rows" hidden></div>
     <div id="action" class="rows"></div>
   </section>
 </main>
@@ -254,57 +258,60 @@
   <div class="foot-build" id="build"></div>
 </footer>
 
+<!-- PSBT library (src/mint.js, bundled by `npm run build`) -->
+<script src="mint.js"></script>
 <script>
 // ---------------------------------------------------------------------------
 // Build stamp, baked into the page itself (no backend needed to read it).
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.3.0'
+const VERSION = '0.4.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
 // ---------------------------------------------------------------------------
-// Backend — the counters-mint server (/status, /mint/*, /__version).
-// Same origin when this page is served by the stack itself; the GitHub Pages
-// copy has no backend of its own, so it uses the tunnel. ?backend= overrides.
+// Where things are.
+//
+// The staging stack proxies /cp/* to your Counterparty node and serves this
+// page on the same origin. The GitHub Pages copy has no stack of its own, so
+// it reaches the stack through the tunnel; if neither answers, the public
+// Counterparty node composes (it is rate-limited, but it works). ?backend=
+// overrides the stack origin for testing.
 // NOTE: the trycloudflare hostname is ephemeral — update it if the tunnel restarts.
 // ---------------------------------------------------------------------------
 const TUNNEL_BACKEND = 'https://are-town-mother-zope.trycloudflare.com'
 const BACKEND = new URLSearchParams(location.search).get('backend')
   || (location.hostname.endsWith('github.io') || location.protocol === 'file:' ? TUNNEL_BACKEND : '')
-const api = (p) => BACKEND + p
-
-// Public Counterparty Core API (CORS-enabled), for XCP balances.
-const CP_API = {
-  mainnet: 'https://api.counterparty.io:4000/v2',
-  testnet4: 'https://api.counterparty.io:44000/v2',
-}
+const STACK_CP = BACKEND + '/cp/v2'
+const PUBLIC_CP = 'https://api.counterparty.io:4000/v2'
+const EXPLORERS = { mainnet: 'https://mempool.space', testnet4: 'https://mempool.space/testnet4', signet: 'https://mempool.space/signet' }
+const PENDING_KEY = 'angel:pending'
+/** Coins at or under this are left alone: they may be inscriptions or asset postage. */
+const DUST_GUARD = 1000
 
 const state = {
   network: 'mainnet',
-  explorerBase: 'https://mempool.space',
-  wallet: null,        // { kind, address }
-  balances: null,      // { btc, xcp } in whole units, null while loading, NaN on failure
+  cp: null,              // Counterparty API base in use, null when none answers
+  cpIsOwn: false,        // true when it's the stack's node rather than the public one
+  wallet: null,          // { kind, address }
+  balances: null,        // { btc, xcp } in whole units, null while loading, NaN on failure
   file: null,
   tier: 'standard',
   fees: { economy: 1, standard: 2, fastest: 5 },
   step: 'idle',
-  txid: null,
+  cost: null,            // { commitFee, revealFee, total } once composed
+  result: null,          // { asset, commitTxid, revealTxid } when done
   error: null,
 }
+const explorer = () => EXPLORERS[state.network] || EXPLORERS.mainnet
 
 // ---------------------------------------------------------------------------
-// Wallets. Each entry: present(), connect() -> address, silent() -> address|null,
-// disconnect(), and mints — whether the commit/reveal flow below can drive it.
-// XCP Wallet and Horizon only sign PSBTs (no sendBitcoin / UTXO listing), so
-// the backend's pay-then-reveal flow can't use them yet.
+// Wallets — the two that speak Counterparty. Both sign the commit as a PSBT and
+// that is all they are asked: the reveal is signed by the page (see
+// src/mint.js). `signCommit` receives the PSBT hex, {address: [input indices]}
+// and the single payment it makes.
 // ---------------------------------------------------------------------------
-const okxProvider = () => {
-  const w = window.okxwallet
-  if (!w) return null
-  return state.network === 'testnet4' ? w.bitcoinTestnet : state.network === 'signet' ? w.bitcoinSignet : w.bitcoin
-}
 const horizonProvider = () => window.HorizonWalletProvider
   || (window.btc_providers?.some(p => p.id === 'HorizonWalletProvider') ? window.HorizonWalletProvider : null)
 
@@ -323,27 +330,23 @@ const WALLETS = {
       return Array.isArray(r) ? r[0] || null : null
     },
     async disconnect() { try { await window.xcpwallet.request({ method: 'xcp_disconnect' }) } catch {} },
-    mints: false,
-  },
-  unisat: {
-    name: 'Unisat',
-    install: 'https://unisat.io/download',
-    present: () => !!window.unisat,
-    async connect() { return (await window.unisat.requestAccounts())?.[0] || null },
-    async silent() { return (await window.unisat.getAccounts())?.[0] || null },
-    async disconnect() {},
-    mints: true,
-    provider: () => window.unisat,
-  },
-  okx: {
-    name: 'OKX Wallet',
-    install: 'https://www.okx.com/web3',
-    present: () => !!okxProvider(),
-    async connect() { return (await okxProvider().connect())?.address || null },
-    async silent() { return (await okxProvider().getAccounts?.())?.[0] || null },
-    async disconnect() {},
-    mints: true,
-    provider: okxProvider,
+    // XCP Wallet refuses BTC movement it cannot account for. A commit carries
+    // no Counterparty message, so it is declared as the payment it is: the
+    // wallet checks every non-change output against this, to the satoshi.
+    // It also insists on explicit signInputs and SIGHASH_ALL for every index.
+    async signCommit(hex, signInputs, pay) {
+      const indices = Object.values(signInputs).flat()
+      const r = await window.xcpwallet.request({ method: 'xcp_signBitcoinPsbt', params: [{
+        hex, signInputs,
+        sighashTypes: new Array(Math.max(0, ...indices) + 1).fill(1),
+        intent: {
+          standard: 'xcp-wallet/bitcoin-payment', version: 1, action: 'pay',
+          outputs: [{ address: pay.address, amountSats: pay.valueSats }],
+          description: `Counter commit for ${pay.asset}`.slice(0, 120),
+        },
+      }] })
+      return r?.hex
+    },
   },
   horizon: {
     name: 'Horizon',
@@ -360,10 +363,14 @@ const WALLETS = {
       return (list.find(a => a.addressType === 'p2tr') || list[0])?.address || null
     },
     async disconnect() { try { await horizonProvider().request('wallet_disconnect', {}) } catch {} },
-    mints: false,
+    async signCommit(hex, signInputs) {
+      // The house API; sighashTypes is a whitelist, and the PSBT asks for ALL.
+      const { result } = await horizonProvider().request('signPsbt', { hex, signInputs, sighashTypes: [0, 1] })
+      return result?.hex
+    },
   },
 }
-const WALLET_ORDER = ['xcp', 'unisat', 'okx', 'horizon']
+const WALLET_ORDER = ['xcp', 'horizon']
 
 async function connect(kind) {
   const w = WALLETS[kind]
@@ -372,20 +379,103 @@ async function connect(kind) {
   if (!address) throw new Error('Wallet returned no address')
   state.wallet = { kind, address }
   localStorage.setItem('angel:wallet', kind)
-  renderWallet(); renderAction()
+  renderWallet(); renderAction(); renderPending()
   loadBalances()
 }
 async function disconnect() {
   const kind = state.wallet?.kind
   state.wallet = null; state.balances = null
   localStorage.removeItem('angel:wallet')
-  renderWallet(); renderAction()
+  renderWallet(); renderAction(); renderPending()
   if (kind) await WALLETS[kind].disconnect()
 }
 
 // XCP Wallet injects late sometimes; ask it to announce itself and re-render.
 window.addEventListener('xcp-wallet#initialized', () => renderWallet())
 window.dispatchEvent(new Event('xcp-wallet#discover'))
+
+// ---------------------------------------------------------------------------
+// Counterparty + explorer
+// ---------------------------------------------------------------------------
+async function cpJson(path, init) {
+  const r = await fetch(state.cp + path, init)
+  const text = await r.text()
+  let body = {}
+  try { body = JSON.parse(text) } catch {}
+  if (!r.ok || body.error) throw new Error(body.error || `Counterparty said ${r.status}: ${text.slice(0, 160)}`)
+  return body.result
+}
+
+/** A compose. Parameters go as a form body so a file-sized description fits. */
+function cpCompose(address, type, params) {
+  return cpJson(`/addresses/${encodeURIComponent(address)}/compose/${type}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  })
+}
+
+/**
+ * The coins Core may spend for the commit, as `inputs_set` entries. Chosen
+ * here rather than by Core so coins that might carry an inscription (small)
+ * or an attached asset balance are never spent, and so a big address doesn't
+ * trip Core's per-compose RPC cap.
+ */
+async function spendableInputs(address) {
+  const [utxos, attached] = await Promise.all([
+    fetch(`${explorer()}/api/address/${address}/utxo`).then(r => { if (!r.ok) throw new Error('could not list UTXOs'); return r.json() }),
+    cpJson(`/addresses/${encodeURIComponent(address)}/balances?type=utxo`).catch(() => []),
+  ])
+  const carrying = new Set((attached || []).map(b => b.utxo).filter(Boolean))
+  const spk = AngelMint.addressScript(address)
+  const ok = utxos
+    .filter(u => u.value > DUST_GUARD && !carrying.has(`${u.txid}:${u.vout}`))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 20)
+  if (!ok.length) throw new Error('No spendable coins at this address (coins at or under 1000 sats are left alone).')
+  return { inputs_set: ok.map(u => `${u.txid}:${u.vout}:${u.value}:${spk}`).join(','), total: ok.reduce((s, u) => s + u.value, 0) }
+}
+
+/**
+ * Relay a finalized transaction: the stack's own node first (it sees the
+ * commit immediately), then mempool.space. "Already known" is success.
+ */
+async function broadcast(rawHex) {
+  const expected = AngelMint.txidOf(rawHex)
+  const already = /already|duplicate|txn-mempool-conflict|outputs already/i
+  const attempts = []
+  if (state.cpIsOwn) attempts.push(async () => {
+    const r = await fetch(`${state.cp}/bitcoin/transactions`, {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ signedhex: rawHex }).toString(),
+    })
+    const body = await r.json().catch(() => ({}))
+    if (r.ok && typeof body.result === 'string') return body.result
+    throw new Error(body.error || `node said ${r.status}`)
+  })
+  attempts.push(async () => {
+    const r = await fetch(`${explorer()}/api/tx`, { method: 'POST', body: rawHex })
+    const text = (await r.text()).trim()
+    if (r.ok && /^[0-9a-f]{64}$/i.test(text)) return text
+    throw new Error(text.slice(0, 200))
+  })
+  const errors = []
+  for (const go of attempts) {
+    try { return await go() }
+    catch (e) { if (already.test(e.message)) return expected; errors.push(e.message) }
+  }
+  throw new Error(`Could not relay ${expected}. It is signed, so it can be sent again.\n${errors.join('\n')}`)
+}
+
+/** Did the transaction reach a mempool? A relay's txid is its word, not a fact. */
+async function explorerKnows(txid, tries = 6) {
+  for (let i = 0; i < tries; i++) {
+    const r = await fetch(`${explorer()}/api/tx/${txid}/status`).catch(() => null)
+    if (r?.ok) return true
+    await new Promise(res => setTimeout(res, 1500))
+  }
+  return false
+}
 
 // ---------------------------------------------------------------------------
 // Balances — BTC from mempool (confirmed + unconfirmed), XCP from Counterparty.
@@ -396,15 +486,13 @@ async function loadBalances() {
   state.balances = null
   renderWallet()
   const [btc, xcp] = await Promise.all([
-    fetch(`${state.explorerBase}/api/address/${addr}`).then(r => r.json()).then(a => {
+    fetch(`${explorer()}/api/address/${addr}`).then(r => r.json()).then(a => {
       const c = a.chain_stats, m = a.mempool_stats
       return (c.funded_txo_sum - c.spent_txo_sum + m.funded_txo_sum - m.spent_txo_sum) / 1e8
     }).catch(() => NaN),
-    CP_API[state.network]
-      ? fetch(`${CP_API[state.network]}/addresses/${addr}/balances/XCP?type=address`).then(r => r.json()).then(d => {
-          if (d.error) throw new Error(d.error)
-          return (d.result || []).reduce((s, b) => s + (b.quantity || 0), 0) / 1e8
-        }).catch(() => NaN)
+    state.cp
+      ? cpJson(`/addresses/${encodeURIComponent(addr)}/balances/XCP?type=address`)
+          .then(rows => (rows || []).reduce((s, b) => s + (b.quantity || 0), 0) / 1e8).catch(() => NaN)
       : Promise.resolve(NaN),
   ])
   if (state.wallet?.address !== addr) return   // changed while loading
@@ -413,20 +501,25 @@ async function loadBalances() {
 }
 const fmtAmt = (n, max = 8) => Number.isNaN(n) ? 'unavailable'
   : n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: max })
+const fmtSats = (n) => n.toLocaleString('en-US') + ' sats'
 
 // ---------------------------------------------------------------------------
-// Boot — learn network + fees from the backend
+// Boot — find a Counterparty node, learn the network, load fees
 // ---------------------------------------------------------------------------
 async function boot() {
   const pill = document.getElementById('net')
-  try {
-    const s = await (await fetch(api('/status'))).json()
-    if (s.network) state.network = s.network
-    if (s.explorer_base) state.explorerBase = s.explorer_base
-    pill.textContent = state.network; pill.className = 'net-pill'
-  } catch {
-    pill.textContent = 'backend offline'; pill.className = 'net-pill off'
+  for (const [base, own] of [[STACK_CP, true], [PUBLIC_CP, false]]) {
+    try {
+      const r = await fetch(base + '/', { signal: AbortSignal.timeout(8000) })
+      const { result } = await r.json()
+      if (!result?.network) continue
+      state.cp = base; state.cpIsOwn = own; state.network = result.network
+      pill.textContent = `${state.network} · ${own ? 'your node' : 'public node'}`
+      pill.className = own ? 'net-pill' : 'net-pill warn'
+      break
+    } catch {}
   }
+  if (!state.cp) { pill.textContent = 'no counterparty node'; pill.className = 'net-pill off' }
   await loadFees()
   const prev = localStorage.getItem('angel:wallet')
   if (prev && WALLETS[prev]?.present()) {
@@ -435,12 +528,12 @@ async function boot() {
       if (address) { state.wallet = { kind: prev, address }; loadBalances() }
     } catch {}
   }
-  renderWallet(); renderAction()
+  renderWallet(); renderAction(); renderPending()
 }
 
 async function loadFees() {
   try {
-    const r = await fetch(`${state.explorerBase}/api/v1/fees/recommended`)
+    const r = await fetch(`${explorer()}/api/v1/fees/recommended`)
     if (r.ok) {
       const f = await r.json()
       state.fees = {
@@ -478,10 +571,11 @@ function setFile(f) {
     return renderAction()
   }
   preview.hidden = false
+  const mime = AngelMint.guessContentType(f)
   document.getElementById('pfn').textContent = f.name
-  document.getElementById('pd').textContent = `${f.type || 'unknown type'} · ${fmtBytes(f.size)}`
+  document.getElementById('pd').textContent = `${mime} · ${fmtBytes(f.size)}`
   document.getElementById('sumFile').textContent = f.name
-  if (f.type.startsWith('image/')) {
+  if (mime.startsWith('image/')) {
     thumbUrl = URL.createObjectURL(f)
     const img = new Image(); img.src = thumbUrl; thumb.appendChild(img)
   } else {
@@ -490,13 +584,6 @@ function setFile(f) {
   renderAction()
 }
 function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(2) + ' MB' }
-
-// Chunked so large files don't overflow the argument list.
-function bytesToBase64(bytes) {
-  let s = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
-  return btoa(s)
-}
 
 // ---------------------------------------------------------------------------
 // Fee tiers
@@ -509,72 +596,83 @@ document.getElementById('tiers').addEventListener('click', (e) => {
 })
 
 // ---------------------------------------------------------------------------
-// Mint flow  (prepare -> pay commit -> reveal -> sign -> broadcast)
+// Mint: compose -> wallet signs commit -> broadcast -> page signs reveal -> broadcast
+//
+// The reveal PSBT and its key are saved to localStorage BEFORE the commit goes
+// out, so a mint interrupted after that point can always be finished (see
+// renderPending). Nothing is ever unrecoverable once the commit is on chain.
 // ---------------------------------------------------------------------------
 async function mint() {
   const w = state.wallet && WALLETS[state.wallet.kind]
-  if (!w?.mints) return
-  const p = w.provider()
-  if (!p) { await disconnect(); return }
+  if (!w || !state.file || !state.cp) return
+  if (loadPending()) return
+  const source = state.wallet.address
+  const rate = state.fees[state.tier]
+  state.cost = null; state.error = null
 
-  setStep('paying')
   try {
-    let body_b64 = '', content_type = 'application/octet-stream'
-    if (state.file) {
-      body_b64 = bytesToBase64(new Uint8Array(await state.file.arrayBuffer()))
-      content_type = state.file.type || 'application/octet-stream'
+    setStep('composing')
+    const bytes = new Uint8Array(await state.file.arrayBuffer())
+    const mime = AngelMint.guessContentType(state.file)
+    const description = AngelMint.encodeContent(bytes, mime)
+    const asset = AngelMint.randomNumericAsset()
+    const { inputs_set } = await spendableInputs(source)
+    const compose = await cpCompose(source, 'issuance', {
+      asset, quantity: '1', divisible: 'false', lock: 'false',
+      description, mime_type: mime,
+      encoding: 'taproot', inscription: 'false',
+      sat_per_vbyte: String(rate), verbose: 'true',
+      inputs_set, exclude_utxos_with_balances: 'true',
+    })
+
+    const revealKey = AngelMint.newRevealKey()
+    const plan = AngelMint.planMint(compose, revealKey, rate)
+    state.cost = { commitFee: plan.commitFee, revealFee: plan.revealFee, total: plan.commitFee + plan.revealFee }
+
+    setStep('signing-commit')
+    const signInputs = { [source]: Array.from({ length: plan.inputCount }, (_, i) => i) }
+    const signed = await w.signCommit(plan.commitPsbt, signInputs, { address: plan.commit.address, valueSats: plan.commitValue, asset })
+    if (!signed) throw new Error('The wallet returned no signed PSBT.')
+    const commit = AngelMint.finalize(signed)
+
+    const revealPsbt = AngelMint.buildRevealPsbt(compose, commit.txid, plan.commitIndex, plan.commitValue, plan.commit)
+    const pending = {
+      asset, source, network: state.network, commitTxid: commit.txid, revealPsbt,
+      revealKey: AngelMint.bytesToHex(revealKey.privateKey), at: Date.now(),
     }
+    localStorage.setItem(PENDING_KEY, JSON.stringify(pending))
 
-    const prep = await post('/mint/prepare', {
-      content_type, body_b64, supply: 1, divisible: false,
-      fee_rate: state.fees[state.tier], wallet_address: state.wallet.address,
-    })
-    if (prep.explorer_base) state.explorerBase = prep.explorer_base
+    setStep('broadcasting-commit')
+    await broadcast(commit.hex)
 
-    // Make sure a reveal can be funded BEFORE paying the commit.
-    const pickSource = (utxos) => utxos.filter(u => u.satoshis >= prep.min_source_sats).sort((a, b) => b.satoshis - a.satoshis)[0]
-    if (!pickSource(await getUtxos(p)))
-      throw new Error(`This wallet needs a UTXO of at least ${prep.min_source_sats} sats to fund the reveal. Fund it and retry.`)
-
-    const commitTxid = await p.sendBitcoin(prep.commit_address, prep.commit_value_sats)
-
-    // Re-list after the commit: the commit's change may now be the only candidate.
-    const src = pickSource(await getUtxos(p))
-    if (!src) throw new Error(`No UTXO >= ${prep.min_source_sats} sats after paying the commit (${commitTxid}). Keep this txid and retry once it confirms.`)
-
-    setStep('signing')
-    const rev = await post('/mint/reveal', {
-      session_id: prep.session_id,
-      commit_txid: commitTxid,
-      source_utxo: { txid: src.txid, vout: src.vout, value: src.satoshis, script_pubkey_hex: src.scriptPk },
-    })
-    const signed = await p.signPsbt(rev.reveal_psbt_hex, {
-      autoFinalized: false,
-      toSignInputs: [{ index: 0, address: state.wallet.address, disableTweakSigner: false }],
-    })
-
-    setStep('broadcasting')
-    const bc = await post('/mint/broadcast', { session_id: prep.session_id, signed_psbt_hex: signed })
-    state.txid = bc.reveal_txid
-    setStep('done')
-    loadBalances()
+    await finishReveal(pending)
   } catch (e) {
     state.error = e?.message || String(e)
     setStep('error')
+    renderPending()
   }
 }
 
-// Unisat calls it getBitcoinUtxos; older builds and OKX call it getUtxos.
-async function getUtxos(p) {
-  const list = p.getBitcoinUtxos ? await p.getBitcoinUtxos() : p.getUtxos ? await p.getUtxos() : []
-  return (list || []).map(u => ({ txid: u.txid, vout: u.vout, satoshis: u.satoshis ?? u.value, scriptPk: u.scriptPk ?? u.scriptPubKey }))
+/** Sign the reveal here and relay it. Separate so an interrupted mint can resume. */
+async function finishReveal(pending) {
+  setStep('signing-reveal')
+  const key = AngelMint.revealKeyFromHex(pending.revealKey)
+  const reveal = AngelMint.finalize(AngelMint.signRevealLocally(pending.revealPsbt, key.privateKey))
+
+  setStep('broadcasting-reveal')
+  const txid = await broadcast(reveal.hex)
+  if (!(await explorerKnows(txid)))
+    throw new Error(`The relay accepted the reveal (${txid}) but no mempool has seen it. The commit is untouched — use Finish reveal to send it again.`)
+
+  localStorage.removeItem(PENDING_KEY)
+  state.result = { asset: pending.asset, commitTxid: pending.commitTxid, revealTxid: txid }
+  setStep('done')
+  renderPending()
+  loadBalances()
 }
 
-async function post(path, body) {
-  const r = await fetch(api(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
-  return data
+function loadPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null') } catch { return null }
 }
 function setStep(s) { state.step = s; renderAction() }
 
@@ -614,54 +712,92 @@ function renderWallet() {
 }
 
 // ---------------------------------------------------------------------------
+// Render: an unfinished mint (commit out, reveal not)
+// ---------------------------------------------------------------------------
+function renderPending() {
+  const el = document.getElementById('pending')
+  const p = loadPending()
+  const busy = !['idle', 'error', 'done'].includes(state.step)
+  if (!p || busy) { el.hidden = true; el.innerHTML = ''; return }
+  el.hidden = false
+  el.innerHTML = `
+    <div class="alert warn">
+      <b>Unfinished mint.</b> The commit for <code>${escapeHtml(p.asset)}</code> was broadcast
+      (<a href="${explorer()}/tx/${escapeHtml(p.commitTxid)}" target="_blank" rel="noopener">${escapeHtml(p.commitTxid.slice(0, 12))}…</a>)
+      but the reveal was not. Nothing is lost: the reveal key is saved in this browser.
+    </div>
+    <button class="btn primary" id="finish">Finish reveal</button>
+    <button class="btn quiet" id="discardPending">Discard (forget this mint)</button>`
+  el.querySelector('#finish').onclick = async () => {
+    state.error = null; state.result = null
+    try { await finishReveal(p) }
+    catch (e) { state.error = e?.message || String(e); setStep('error'); renderPending() }
+  }
+  el.querySelector('#discardPending').onclick = () => {
+    if (!confirm('Forget this mint? The commit output can only be spent with the key saved here. Copy the reveal key first if you might want it:\n\n' + p.revealKey)) return
+    localStorage.removeItem(PENDING_KEY); renderPending(); renderAction()
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Render: mint action area
 // ---------------------------------------------------------------------------
+const STEPS = [
+  ['composing', 'Compose with Counterparty'],
+  ['signing-commit', 'Sign the commit — approve in your wallet'],
+  ['broadcasting-commit', 'Broadcast the commit'],
+  ['signing-reveal', 'Sign the reveal (here, no wallet needed)'],
+  ['broadcasting-reveal', 'Broadcast the reveal'],
+]
 function renderAction() {
   const el = document.getElementById('action')
-  const busy = ['paying', 'signing', 'broadcasting'].includes(state.step)
+  const costRows = state.cost ? `<div class="summary">
+      <div><span>Commit fee</span><b>${fmtSats(state.cost.commitFee)}</b></div>
+      <div><span>Reveal fee</span><b>${fmtSats(state.cost.revealFee)}</b></div>
+      <div><span>Total</span><b>${fmtSats(state.cost.total)}</b></div>
+    </div>` : ''
 
   if (state.step === 'done') {
+    const r = state.result
     el.innerHTML = `<div class="alert ok done">
         <h3>Inscribed.</h3>
-        Counterparty numbers it in the next block.<br>
-        <a href="${escapeHtml(state.explorerBase)}/tx/${escapeHtml(state.txid)}" target="_blank" rel="noopener">View reveal tx ↗</a>
-      </div>
+        <code>${escapeHtml(r.asset)}</code> — Counterparty numbers it once the reveal confirms.<br>
+        <a href="${explorer()}/tx/${escapeHtml(r.commitTxid)}" target="_blank" rel="noopener">commit ↗</a> ·
+        <a href="${explorer()}/tx/${escapeHtml(r.revealTxid)}" target="_blank" rel="noopener">reveal ↗</a>
+      </div>${costRows}
       <button class="btn" id="again">Mint another</button>`
-    el.querySelector('#again').onclick = () => { state.step = 'idle'; state.txid = null; renderAction() }
+    el.querySelector('#again').onclick = () => { state.step = 'idle'; state.result = null; state.cost = null; renderAction() }
     return
   }
   if (state.step === 'error') {
-    el.innerHTML = `<div class="alert err">${escapeHtml(state.error)}</div><button class="btn" id="retry">Try again</button>`
-    el.querySelector('#retry').onclick = () => { state.step = 'idle'; renderAction() }
+    el.innerHTML = `<div class="alert err">${escapeHtml(state.error)}</div><button class="btn" id="retry">Back</button>`
+    el.querySelector('#retry').onclick = () => { state.step = 'idle'; state.cost = null; renderAction(); renderPending() }
     return
   }
-  if (busy) {
-    const cls = (k) => order(state.step) > order(k) ? 'ok' : state.step === k ? 'on' : ''
-    const icon = (k, n) => cls(k) === 'ok' ? '✓' : n
-    el.innerHTML = `<div class="steps">
-        <div class="step ${cls('paying')}"><span class="i">${icon('paying', 1)}</span>Pay the commit — approve in your wallet</div>
-        <div class="step ${cls('signing')}"><span class="i">${icon('signing', 2)}</span>Sign the reveal — approve in your wallet</div>
-        <div class="step ${cls('broadcasting')}"><span class="i">${icon('broadcasting', 3)}</span>Broadcast to Bitcoin</div>
-      </div>`
+  if (state.step !== 'idle') {
+    const at = STEPS.findIndex(([k]) => k === state.step)
+    el.innerHTML = `<div class="steps">${STEPS.map(([k, label], i) => {
+      const cls = i < at ? 'ok' : i === at ? 'on' : ''
+      return `<div class="step ${cls}"><span class="i">${cls === 'ok' ? '✓' : i + 1}</span>${label}</div>`
+    }).join('')}</div>${costRows}`
     return
   }
 
   // idle
+  const pending = loadPending()
   if (!state.wallet) {
     el.innerHTML = `<button class="btn primary" disabled>Mint Counter</button><p class="note">Connect a wallet first (step 1).</p>`
     return
   }
-  const w = WALLETS[state.wallet.kind]
-  if (!w.mints) {
-    el.innerHTML = `<button class="btn primary" disabled>Mint Counter</button>
-      <div class="alert warn">Minting through ${w.name} isn't wired up yet — it signs PSBTs only, and this mint flow needs the wallet to pay the commit directly. Connect Unisat or OKX to mint.</div>`
+  if (!state.cp) {
+    el.innerHTML = `<button class="btn primary" disabled>Mint Counter</button><div class="alert warn">No Counterparty node is reachable, so nothing can be composed. Start the staging stack, or check the tunnel.</div>`
     return
   }
-  el.innerHTML = `<button class="btn primary" id="go" ${state.file ? '' : 'disabled'}>Mint Counter</button>
-    ${state.file ? '' : '<p class="note">Choose a file first (step 2).</p>'}`
+  const blocked = pending ? 'Finish or discard the unfinished mint above first.' : !state.file ? 'Choose a file first (step 2).' : ''
+  el.innerHTML = `<button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>Mint Counter</button>
+    ${blocked ? `<p class="note">${blocked}</p>` : '<p class="note">Your wallet signs one payment (the commit); the page signs the reveal.</p>'}`
   const go = el.querySelector('#go'); if (go) go.onclick = mint
 }
-function order(s) { return ['idle','paying','signing','broadcasting','done'].indexOf(s) }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 
 // ---------------------------------------------------------------------------
@@ -670,7 +806,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;'
 async function loadVersion() {
   const dot = document.getElementById('verdot'), text = document.getElementById('vertext'), btn = document.getElementById('deployBtn')
   try {
-    const v = await (await fetch(api('/__version'))).json()
+    const v = await (await fetch(BACKEND + '/__version')).json()
     if (v.error) throw new Error(v.error)
     const link = `<a href="${REPO_URL}/commit/${escapeHtml(v.deployed)}" target="_blank" rel="noopener">${escapeHtml(v.deployed_short)}</a>`
     if (v.up_to_date) {
@@ -689,7 +825,7 @@ async function doDeploy() {
   if (!token) { token = prompt('Deploy token:') || ''; if (token) localStorage.setItem('angel:deploytoken', token) }
   btn.disabled = true; btn.textContent = 'Deploying…'
   try {
-    const r = await fetch(api('/__deploy'), { method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {} })
+    const r = await fetch(BACKEND + '/__deploy', { method: 'POST', headers: token ? { 'X-Deploy-Token': token } : {} })
     const d = await r.json()
     if (!r.ok || d.error) {
       if (r.status === 401) localStorage.removeItem('angel:deploytoken')

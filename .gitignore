@@ -1,13 +1,8 @@
-# Local backend credentials (copy .env.example -> .env)
+# Local stack config (copy .env.example -> .env)
 .env
 
-# Image-conversion output
-out/
-
-# Local data volume
-data/
+# `npm install` for the one-time bundle (web/mint.js is committed)
+node_modules/
 
 .DS_Store
 *.log
-deploy.log
-.deploy.lock
