@@ -1,0 +1,11 @@
+# Local backend credentials (copy .env.example -> .env)
+.env
+
+# Image-conversion output
+out/
+
+# Local data volume
+data/
+
+.DS_Store
+*.log

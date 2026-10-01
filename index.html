@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Angel · Guardian Set — mint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #14110d; --bg2: #1b1712; --card: #1e1a14; --line: #332a1f;
+    --ink: #ece3d4; --dim: #a4957f; --faint: #6e6253;
+    --copper: #e0682f; --copper2: #f3905a; --copper-ghost: #e0682f22;
+    --patina: #5bb394; --gold: #d9a441;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --sans: 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  * , *::before, *::after { box-sizing: border-box }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  a { color: var(--copper); text-decoration: none }
+  ::selection { background: var(--copper); color: #160f09 }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 22px }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0; border-bottom: 1px solid var(--line); margin-bottom: 38px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px }
+  .brand .glyph { width: 30px; height: 30px; flex: none }
+  .brand .name { font-family: var(--mono); font-weight: 600; letter-spacing: .04em; font-size: 15px }
+  .brand .name small { display: block; color: var(--faint); font-weight: 500; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase }
+
+  .net-pill {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--patina); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  }
+
+  .hero { margin-bottom: 34px }
+  .hero h1 { font-family: var(--mono); font-size: 24px; font-weight: 600; margin: 0 0 10px; letter-spacing: .01em }
+  .hero p { color: var(--dim); margin: 0; font-size: 14px }
+
+  .section { margin-bottom: 24px }
+  .label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px }
+
+  .drop {
+    border: 1px dashed var(--line); border-radius: 12px; padding: 26px; text-align: center;
+    cursor: pointer; transition: .15s; background: var(--bg2);
+  }
+  .drop:hover, .drop.over { border-color: var(--copper); background: var(--card) }
+  .drop input { display: none }
+  .drop .big { font-family: var(--mono); color: var(--ink); font-size: 14px }
+  .drop .sub { color: var(--faint); font-family: var(--mono); font-size: 12px; margin-top: 6px }
+  .preview { margin-top: 14px; display: flex; align-items: center; gap: 14px }
+  .preview .thumb {
+    width: 64px; height: 64px; flex: none; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg) center/contain no-repeat; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 10px; color: var(--faint); overflow: hidden;
+  }
+  .preview .thumb img, .preview .thumb svg { max-width: 100%; max-height: 100% }
+  .preview .meta { font-family: var(--mono); font-size: 12.5px }
+  .preview .meta .fn { color: var(--ink) }
+  .preview .meta .d { color: var(--faint) }
+
+  .tiers { display: flex; gap: 8px }
+  .tier {
+    flex: 1; background: var(--bg2); border: 1px solid var(--line); border-radius: 9px;
+    padding: 12px; cursor: pointer; text-align: center; transition: .15s;
+  }
+  .tier:hover { border-color: var(--copper) }
+  .tier.sel { border-color: var(--copper); background: var(--copper-ghost) }
+  .tier .t { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim) }
+  .tier .r { font-family: var(--mono); font-size: 15px; color: var(--ink); margin-top: 4px }
+  .tier .u { font-family: var(--mono); font-size: 10px; color: var(--faint) }
+
+  .btn {
+    width: 100%; padding: 15px; font-family: var(--mono); font-size: 14px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; border: none; border-radius: 10px;
+    cursor: pointer; transition: .15s; line-height: 1;
+  }
+  .btn.primary { background: var(--copper); color: #160f09 }
+  .btn.primary:hover:not(:disabled) { background: var(--copper2); transform: translateY(-1px) }
+  .btn.primary:disabled { opacity: .35; cursor: not-allowed }
+  .btn.ghost { background: var(--bg2); color: var(--dim); border: 1px solid var(--line) }
+  .btn.ghost:hover { border-color: var(--copper); color: var(--ink) }
+  .btn.small { width: auto; padding: 9px 16px; font-size: 12px; text-transform: none; letter-spacing: .02em }
+
+  .mintcard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px 20px; font-family: var(--mono); font-size: 12px; margin-bottom: 16px; color: var(--dim) }
+  .summary b { color: var(--ink); font-weight: 500 }
+
+  .wallet-bar { display: flex; align-items: center; gap: 10px }
+  .addr { font-family: var(--mono); font-size: 12px; color: var(--dim) }
+
+  .steps { display: flex; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--faint); margin-bottom: 10px; flex-wrap: wrap }
+  .steps .on { color: var(--copper); font-weight: 600 }
+  .steps .ok { color: var(--patina) }
+  .msg { font-family: var(--mono); font-size: 13px; color: var(--dim); margin: 0 }
+  .err { font-family: var(--mono); font-size: 13px; color: #e74c3c; margin: 8px 0 0 }
+  .done .t { font-family: var(--mono); font-size: 18px; color: var(--patina); font-weight: 700; margin: 0 0 6px }
+
+  footer { text-align: center; color: var(--faint); font-family: var(--mono); font-size: 11px; padding: 50px 0 30px; letter-spacing: .04em }
+
+  dialog {
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 14px; padding: 0; width: 330px; max-width: 92vw;
+  }
+  dialog::backdrop { background: #000a; }
+  .modal-h { padding: 16px 18px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 13px; letter-spacing: .06em }
+  .wopt {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: 14px 18px; background: none; border: none; border-bottom: 1px solid var(--line);
+    color: var(--ink); font-family: var(--mono); font-size: 13px; cursor: pointer; transition: .12s;
+  }
+  .wopt:hover:not(:disabled) { background: var(--bg2) }
+  .wopt:disabled { color: var(--faint); cursor: default }
+  .wopt .st { font-size: 11px; color: var(--patina) }
+  .wopt .st.off { color: var(--faint) }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <div class="brand">
+    <svg class="glyph" viewBox="0 0 100 100" aria-hidden="true">
+      <g fill="none" stroke="#e0682f" stroke-width="3" stroke-linecap="round">
+        <circle cx="50" cy="22" r="10" stroke="#d9a441"/>
+        <path d="M50 34 C38 46 24 52 14 50 C26 56 34 62 40 78"/>
+        <path d="M50 34 C62 46 76 52 86 50 C74 56 66 62 60 78"/>
+        <line x1="50" y1="36" x2="50" y2="82"/>
+      </g>
+    </svg>
+    <div class="name">Angel<small>Guardian Set</small></div>
+  </div>
+  <span class="net-pill" id="net">—</span>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>Mint your Guardian</h1>
+    <p>Drop a file, connect a wallet, mint. Each one is a numbered Counter — a
+       Counterparty asset bound to your file, numbered from zero.</p>
+  </div>
+
+  <div class="section">
+    <p class="label">1 · Your file</p>
+    <label class="drop" id="drop">
+      <input type="file" id="file" />
+      <div class="big" id="dropBig">Choose a file to inscribe</div>
+      <div class="sub">image, svg, text, json — anything</div>
+    </label>
+    <div class="preview" id="preview" hidden>
+      <div class="thumb" id="thumb"></div>
+      <div class="meta"><div class="fn" id="pfn"></div><div class="d" id="pd"></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="label">2 · Fee</p>
+    <div class="tiers" id="tiers">
+      <div class="tier" data-tier="economy"><div class="t">Economy</div><div class="r" id="r-economy">—</div><div class="u">sat/vB</div></div>
+      <div class="tier sel" data-tier="standard"><div class="t">Standard</div><div class="r" id="r-standard">—</div><div class="u">sat/vB</div></div>
+      <div class="tier" data-tier="fastest"><div class="t">Fast</div><div class="r" id="r-fastest">—</div><div class="u">sat/vB</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="label">3 · Mint</p>
+    <div class="mintcard" id="mintcard">
+      <div class="summary">
+        <span>asset <b>numeric (free)</b></span>
+        <span>supply <b>1</b></span>
+        <span>fee <b id="sumFee">standard</b></span>
+        <span>file <b id="sumFile">none</b></span>
+      </div>
+      <div id="action"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="wrap">For Angel — numbered by the chain, owned forever.</footer>
+
+<dialog id="walletModal">
+  <div class="modal-h">Connect a wallet</div>
+  <button class="wopt" data-kind="unisat">Unisat <span class="st off" id="st-unisat">not found</span></button>
+  <button class="wopt" data-kind="okx">OKX <span class="st off" id="st-okx">not found</span></button>
+  <button class="wopt" data-kind="horizon">Horizon <span class="st off" id="st-horizon">not found</span></button>
+</dialog>
+
+<script>
+// ---------------------------------------------------------------------------
+// Config — talks to a counters-mint backend. Same origin by default (this page
+// is served from the backend's static dir); override with ?backend=https://host
+// ---------------------------------------------------------------------------
+const BACKEND = new URLSearchParams(location.search).get('backend') || ''
+const api = (p) => BACKEND + p
+
+const state = {
+  network: 'mainnet',
+  explorerBase: 'https://mempool.space',
+  wallet: null,            // { kind, address }
+  file: null,
+  tier: 'standard',
+  fees: { economy: 1, standard: 2, fastest: 5 },
+  step: 'idle',
+}
+
+// ---------------------------------------------------------------------------
+// Wallet providers — Unisat / OKX / Horizon share connect/sendBitcoin/getUtxos/
+// signPsbt. OKX exposes a per-network provider.
+// ---------------------------------------------------------------------------
+function okxProvider() {
+  const w = window.okxwallet
+  if (!w) return null
+  return state.network === 'testnet4' ? w.bitcoinTestnet
+       : state.network === 'signet'   ? w.bitcoinSignet
+       : w.bitcoin
+}
+function provider(kind = state.wallet?.kind) {
+  if (kind === 'unisat') return window.unisat || null
+  if (kind === 'horizon') return window.horizon || null
+  if (kind === 'okx') return okxProvider()
+  return null
+}
+function available(kind) {
+  if (kind === 'unisat') return !!window.unisat
+  if (kind === 'horizon') return !!window.horizon
+  if (kind === 'okx') return !!okxProvider()
+  return false
+}
+async function connect(kind) {
+  const p = provider(kind)
+  if (!p) return false
+  let address
+  if (kind === 'okx') {
+    const res = await p.connect()
+    address = res?.address
+  } else {
+    const accts = await p.requestAccounts()
+    address = accts?.[0]
+  }
+  if (!address) return false
+  state.wallet = { kind, address }
+  localStorage.setItem('angel:wallet', kind)
+  renderAction()
+  return true
+}
+function disconnect() {
+  state.wallet = null
+  localStorage.removeItem('angel:wallet')
+  renderAction()
+}
+
+// ---------------------------------------------------------------------------
+// Boot — learn network + fees from the backend
+// ---------------------------------------------------------------------------
+async function boot() {
+  try {
+    const s = await (await fetch(api('/status'))).json()
+    if (s.network) state.network = s.network
+    if (s.explorer_base) state.explorerBase = s.explorer_base
+  } catch {}
+  document.getElementById('net').textContent = state.network
+  await loadFees()
+  // silent reconnect
+  const prev = localStorage.getItem('angel:wallet')
+  if (prev && available(prev)) {
+    try {
+      const p = provider(prev)
+      const accts = prev === 'okx' ? [(await p.getAccounts?.())?.[0]] : await p.getAccounts()
+      if (accts && accts[0]) { state.wallet = { kind: prev, address: accts[0] }; }
+    } catch {}
+  }
+  renderAction()
+}
+
+async function loadFees() {
+  try {
+    const r = await fetch(`${state.explorerBase}/api/v1/fees/recommended`)
+    if (r.ok) {
+      const f = await r.json()
+      state.fees = {
+        economy: Math.max(1, f.economyFee || f.minimumFee || 1),
+        standard: Math.max(1, f.halfHourFee || f.hourFee || 2),
+        fastest: Math.max(1, f.fastestFee || 5),
+      }
+    }
+  } catch {}
+  for (const t of ['economy', 'standard', 'fastest'])
+    document.getElementById('r-' + t).textContent = state.fees[t]
+}
+
+// ---------------------------------------------------------------------------
+// File handling
+// ---------------------------------------------------------------------------
+const dropEl = document.getElementById('drop')
+const fileEl = document.getElementById('file')
+fileEl.addEventListener('change', (e) => setFile(e.target.files?.[0]))
+;['dragover', 'dragenter'].forEach(ev => dropEl.addEventListener(ev, (e) => { e.preventDefault(); dropEl.classList.add('over') }))
+;['dragleave', 'drop'].forEach(ev => dropEl.addEventListener(ev, (e) => { e.preventDefault(); dropEl.classList.remove('over') }))
+dropEl.addEventListener('drop', (e) => setFile(e.dataTransfer?.files?.[0]))
+
+function setFile(f) {
+  if (!f) return
+  state.file = f
+  document.getElementById('preview').hidden = false
+  document.getElementById('pfn').textContent = f.name
+  document.getElementById('pd').textContent = `${f.type || 'unknown'} · ${fmtBytes(f.size)}`
+  document.getElementById('sumFile').textContent = f.name
+  const thumb = document.getElementById('thumb')
+  thumb.innerHTML = ''
+  if (f.type.startsWith('image/')) {
+    const url = URL.createObjectURL(f)
+    const img = new Image(); img.src = url; thumb.appendChild(img)
+  } else {
+    thumb.textContent = (f.name.split('.').pop() || 'file').toUpperCase()
+  }
+  renderAction()
+}
+function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(2) + ' MB' }
+
+// ---------------------------------------------------------------------------
+// Fee tiers
+// ---------------------------------------------------------------------------
+document.getElementById('tiers').addEventListener('click', (e) => {
+  const el = e.target.closest('.tier'); if (!el) return
+  state.tier = el.dataset.tier
+  document.querySelectorAll('.tier').forEach(t => t.classList.toggle('sel', t === el))
+  document.getElementById('sumFee').textContent = state.tier
+})
+
+// ---------------------------------------------------------------------------
+// Wallet modal
+// ---------------------------------------------------------------------------
+const modal = document.getElementById('walletModal')
+function openWallet() {
+  for (const kind of ['unisat', 'okx', 'horizon']) {
+    const el = document.getElementById('st-' + kind)
+    const ok = available(kind)
+    el.textContent = ok ? 'ready' : 'not found'
+    el.classList.toggle('off', !ok)
+    el.closest('.wopt').disabled = !ok
+  }
+  modal.showModal()
+}
+modal.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.wopt'); if (!btn) return
+  modal.close()
+  try { await connect(btn.dataset.kind) }
+  catch (err) { alert('Connect failed: ' + (err?.message || err)) }
+})
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.close() })
+
+// ---------------------------------------------------------------------------
+// Mint flow  (prepare -> pay commit -> reveal -> sign -> broadcast)
+// ---------------------------------------------------------------------------
+async function mint() {
+  if (!state.wallet) return openWallet()
+  const p = provider()
+  if (!p) { disconnect(); return openWallet() }
+
+  setStep('paying')
+  try {
+    // 1. file -> base64
+    let body_b64 = '', content_type = 'application/octet-stream'
+    if (state.file) {
+      const buf = await state.file.arrayBuffer()
+      body_b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      content_type = state.file.type || 'application/octet-stream'
+    }
+
+    // 2. prepare
+    const prep = await post('/mint/prepare', {
+      content_type, body_b64, supply: 1, divisible: false,
+      fee_rate: state.fees[state.tier], wallet_address: state.wallet.address,
+    })
+    if (prep.explorer_base) state.explorerBase = prep.explorer_base
+
+    // 3. pay dust to commit address
+    const commitTxid = await p.sendBitcoin(prep.commit_address, prep.commit_value_sats)
+
+    // 4. pick a source UTXO (not the commit output, big enough)
+    const utxos = await p.getUtxos()
+    const src = utxos
+      .filter(u => u.txid !== commitTxid && u.satoshis >= prep.min_source_sats)
+      .sort((a, b) => b.satoshis - a.satoshis)[0]
+    if (!src) throw new Error(`No UTXO >= ${prep.min_source_sats} sats. Fund the wallet and retry.`)
+
+    // 5. reveal PSBT (server signs vin[1])
+    setStep('signing')
+    const rev = await post('/mint/reveal', {
+      session_id: prep.session_id,
+      commit_txid: commitTxid,
+      source_utxo: { txid: src.txid, vout: src.vout, value: src.satoshis, script_pubkey_hex: src.scriptPk },
+    })
+
+    // 6. wallet signs vin[0]
+    const signed = await p.signPsbt(rev.reveal_psbt_hex, {
+      autoFinalized: false,
+      toSignInputs: [{ index: 0, address: state.wallet.address, disableTweakSigner: false }],
+    })
+
+    // 7. broadcast
+    setStep('broadcasting')
+    const bc = await post('/mint/broadcast', { session_id: prep.session_id, signed_psbt_hex: signed })
+
+    state.txid = bc.reveal_txid
+    setStep('done')
+  } catch (e) {
+    state.error = e?.message || String(e)
+    setStep('error')
+  }
+}
+
+async function post(path, body) {
+  const r = await fetch(api(path), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
+  return data
+}
+
+function setStep(s) { state.step = s; renderAction() }
+
+// ---------------------------------------------------------------------------
+// Render the action area (depends on wallet + step)
+// ---------------------------------------------------------------------------
+function renderAction() {
+  const el = document.getElementById('action')
+  const busy = ['paying', 'signing', 'broadcasting'].includes(state.step)
+
+  if (state.step === 'done') {
+    el.innerHTML = `<div class="done">
+      <p class="t">Inscribed.</p>
+      <p class="msg">Counterparty numbers it in the next block.</p>
+      <p style="margin:12px 0"><a href="${state.explorerBase}/tx/${state.txid}" target="_blank" rel="noopener">View reveal tx &#8599;</a></p>
+      <button class="btn ghost small" id="again">Mint another</button>
+    </div>`
+    el.querySelector('#again').onclick = () => { state.step = 'idle'; state.txid = null; renderAction() }
+    return
+  }
+  if (state.step === 'error') {
+    el.innerHTML = `<p class="err">${escapeHtml(state.error)}</p><button class="btn ghost small" id="retry" style="margin-top:12px">Try again</button>`
+    el.querySelector('#retry').onclick = () => { state.step = 'idle'; renderAction() }
+    return
+  }
+  if (busy) {
+    const cls = (k) => order(state.step) > order(k) ? 'ok' : state.step === k ? 'on' : ''
+    el.innerHTML = `<div class="steps">
+        <span class="${cls('paying')}">1 pay commit</span>
+        <span class="${cls('signing')}">2 sign reveal</span>
+        <span class="${cls('broadcasting')}">3 broadcast</span>
+      </div>
+      <p class="msg">${
+        state.step === 'paying' ? 'Approve the commit payment in your wallet…'
+        : state.step === 'signing' ? 'Sign the reveal transaction in your wallet…'
+        : 'Broadcasting to Bitcoin…'}</p>`
+    return
+  }
+
+  // idle
+  if (!state.wallet) {
+    el.innerHTML = `<button class="btn ghost" id="connect">Connect wallet to mint</button>`
+    el.querySelector('#connect').onclick = openWallet
+    return
+  }
+  el.innerHTML = `
+    <div class="wallet-bar" style="margin-bottom:14px">
+      <span class="addr">${shortAddr(state.wallet.address)}</span>
+      <button class="btn ghost small" id="disc">Disconnect</button>
+    </div>
+    <button class="btn primary" id="go" ${state.file ? '' : 'disabled'}>Mint Counter</button>
+    ${state.file ? '' : '<p class="msg" style="margin-top:10px;text-align:center">Choose a file first.</p>'}`
+  el.querySelector('#disc').onclick = disconnect
+  const go = el.querySelector('#go'); if (go) go.onclick = mint
+}
+function order(s) { return ['idle','paying','signing','broadcasting','done'].indexOf(s) }
+function shortAddr(a) { return a ? a.slice(0, 8) + '…' + a.slice(-6) : '' }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
+
+boot()
+</script>
+</body>
+</html>

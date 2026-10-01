@@ -1,0 +1,42 @@
+# Angel — Guardian Set mint, staging stack.
+#
+#   app     counters-mint backend (the real /mint/* PSBT engine), serving
+#           Angel's single-page mint at / (index.html mounted over its static
+#           shell — the explorer SPA is not used here).
+#   tunnel  cloudflared quick tunnel — a public https URL with no account or
+#           token, printed in the logs, so you can show staging to anyone.
+#
+# Usage:
+#   cp .env.example .env     # point BTC_RPC_* / CP_API_URL at your node
+#   docker compose up --build
+#   docker compose logs -f tunnel   # grab the https://*.trycloudflare.com URL
+
+services:
+  app:
+    build:
+      context: ../counters-mint
+    command: ["server", "--no-index", "--host", "0.0.0.0", "--port", "8082"]
+    env_file: .env
+    environment:
+      COUNTER_DATA_DIR: /data
+    volumes:
+      - angel-data:/data
+      # Angel's mint page becomes the site root. Read-only so a redeploy of the
+      # backend image can't clobber it.
+      - ./index.html:/app/counters_proto/server/static/index.html:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    # Quick tunnel: no Cloudflare account needed. Want a stable, named URL on
+    # your own domain instead? Set TUNNEL_TOKEN in .env and swap the command for:
+    #   command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://app:8082"]
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  angel-data:
