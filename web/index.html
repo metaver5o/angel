@@ -555,6 +555,8 @@ async function doDeploy() {
 
 document.getElementById('deployBtn').addEventListener('click', doDeploy)
 loadVersion()
+// Re-check so a new push shows up as "behind + Deploy latest" without a reload.
+setInterval(loadVersion, 30000)
 
 boot()
 </script>
