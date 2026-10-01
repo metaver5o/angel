@@ -248,17 +248,17 @@
         <input type="number" id="supply" inputmode="numeric" min="0" step="1" value="1" />
       </div>
       <label class="check"><input type="checkbox" id="divisible" /> Divisible (8 decimals)</label>
+      <label class="check"><input type="checkbox" id="noCounter" /> Without counter — just the asset, no file (a plain issuance)</label>
     </div>
   </section>
 
   <!-- 3 · File -->
-  <section class="card">
+  <section class="card" id="fileCard">
     <h2><span class="n">3</span>Your file <span class="opt">optional</span></h2>
     <label class="drop" id="drop">
       <input type="file" id="file" />
       <div class="big">Choose a file to inscribe</div>
       <div class="sub">image, svg, text, json — anything up to ~390 KB · tap or drop</div>
-      <div class="sub">No file = a plain asset with no counter</div>
     </label>
     <div class="preview" id="preview" hidden>
       <div class="thumb" id="thumb"></div>
@@ -682,9 +682,13 @@ function renderAssetSummary() {
   hint.classList.toggle('bad', !!problem && !!nameEl.value)
   document.getElementById('sumAsset').textContent = state.assetMode === 'numeric' ? 'numeric (free)' : (n ? `${n} · ${nameCostXcp()} XCP` : 'named · 0.5 XCP')
   document.getElementById('sumSupply').textContent = (supplyRaw() === null ? '?' : supplyEl.value.trim()) + (divisibleEl.checked ? ' · divisible' : '')
-  document.getElementById('sumType').textContent = state.file ? 'counter · native envelope' : 'plain asset · no counter'
+  document.getElementById('sumType').textContent = noCounterEl.checked ? 'plain issuance · no counter'
+    : state.file ? 'counter · native envelope' : 'counter (needs a file)'
+  document.getElementById('fileCard').hidden = noCounterEl.checked
   renderAction()
 }
+const noCounterEl = document.getElementById('noCounter')
+noCounterEl.addEventListener('change', renderAssetSummary)
 document.getElementById('assetModes').addEventListener('click', (e) => {
   const el = e.target.closest('[data-mode]'); if (!el) return
   state.assetMode = el.dataset.mode
@@ -769,8 +773,9 @@ async function mint() {
   const source = state.wallet.address
   const rate = currentRate()
   const quantity = supplyRaw()
-  if (!rate || quantity === null || assetProblem()) return
-  state.cost = null; state.error = null; state.flow = state.file ? 'counter' : 'plain'
+  const flow = noCounterEl.checked ? 'plain' : 'counter'
+  if (!rate || quantity === null || assetProblem() || (flow === 'counter' && !state.file)) return
+  state.cost = null; state.error = null; state.flow = flow
 
   try {
     setStep('composing')
@@ -988,29 +993,30 @@ function renderAction() {
     return
   }
   const rate = currentRate()
-  const withFile = !!state.file
+  const counter = !noCounterEl.checked
   const est = !rate ? null
-    : withFile ? estimateCost(state.file.size, AngelMint.guessContentType(state.file), rate)
-    : { commitFee: Math.ceil(165 * rate), revealFee: 0, total: Math.ceil(165 * rate), revealWeight: 0 }
-  const tooBig = withFile && est && est.revealWeight > AngelMint.STANDARD_WITNESS_LIMIT_WU
+    : !counter ? { commitFee: Math.ceil(165 * rate), revealFee: 0, total: Math.ceil(165 * rate), revealWeight: 0 }
+    : state.file ? estimateCost(state.file.size, AngelMint.guessContentType(state.file), rate) : null
+  const tooBig = counter && est && est.revealWeight > AngelMint.STANDARD_WITNESS_LIMIT_WU
   const xcpNeeded = nameCostXcp()
   const xcpHave = state.balances?.xcp
   const blocked = pending ? 'Finish or discard the unfinished mint above first.'
     : assetProblem() ? `Asset name: ${assetProblem()} (step 2)`
     : supplyRaw() === null ? 'Supply must be a whole number (step 2).'
     : xcpNeeded && Number.isFinite(xcpHave) && xcpHave < xcpNeeded ? `A named asset burns ${xcpNeeded} XCP and this address has ${fmtAmt(xcpHave)}.`
+    : counter && !state.file ? 'Choose a file (step 3), or tick "Without counter" in step 2.'
     : !rate ? 'Enter a custom fee rate (step 4), at least 0.1 sat/vB.'
     : tooBig ? `This file would make a ${est.revealWeight.toLocaleString('en-US')} weight-unit reveal, past the 400,000 relay cap. Use a smaller file.` : ''
   el.innerHTML = `${est ? `<div class="summary">
-      ${withFile ? `<div><span>Est. commit fee</span><b>≈ ${fmtSats(est.commitFee)}</b></div>
+      ${counter ? `<div><span>Est. commit fee</span><b>≈ ${fmtSats(est.commitFee)}</b></div>
       <div><span>Est. reveal fee</span><b>≈ ${fmtSats(est.revealFee)}</b></div>` : ''}
       <div><span>Est. total at ${rate} sat/vB</span><b>≈ ${fmtSats(est.total)}</b></div>
       ${xcpNeeded ? `<div><span>Burned for the name</span><b>${xcpNeeded} XCP</b></div>` : ''}
     </div>` : ''}
-    <button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>${withFile ? 'Mint Counter' : 'Issue asset (no counter)'}</button>
-    ${blocked ? `<p class="note">${blocked}</p>` : `<p class="note">${withFile
+    <button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>${counter ? 'Mint Counter' : 'Issue asset (no counter)'}</button>
+    ${blocked ? `<p class="note">${blocked}</p>` : `<p class="note">${counter
       ? 'Exact fees are shown once composed. Your wallet signs one payment (the commit); the page signs the reveal.'
-      : 'One Counterparty transaction, signed by your wallet. Add a file in step 3 to make it a counter.'}</p>`}`
+      : 'One Counterparty issuance, signed by your wallet. No file, no commit/reveal.'}</p>`}`
   const go = el.querySelector('#go'); if (go) go.onclick = mint
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }

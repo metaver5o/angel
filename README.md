@@ -35,7 +35,8 @@ The footer shows two versions:
   uppercase letters not starting with A, or `PARENT.subasset`; Core burns
   0.5 XCP for a name, 0.25 for a subasset). Supply and divisibility are yours
   to set; the default is 1, indivisible.
-- **A plain asset, no counter** — leave the file out. Same name/supply options;
+- **A plain asset, no counter** — tick *Without counter* in the Asset step
+  (the file step disappears). Same name/supply options;
   one ordinary Counterparty issuance, signed by the wallet and relayed.
 
 Fees default to a custom **0.3 sat/vB** (your own node must relay that low;
