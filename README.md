@@ -38,8 +38,9 @@ The footer shows two versions:
 - **A plain asset, no counter** — tick *Without counter* in the Asset step
   (the file step disappears). Same name/supply options;
   one ordinary Counterparty issuance, signed by the wallet and relayed.
-- **A reinscription** — *Reinscribe an asset you own*: a new file on an
-  existing asset (named, numeric or subasset). Composed as a reissuance with
+- **A reinscription** — *Reinscribe an asset you own*: pick one of the
+  connected address's assets from the list (named, numeric or subasset) and
+  drop the new file. Composed as a reissuance with
   quantity 0 and the asset's own divisibility, so supply and locks are
   untouched; no XCP. Same commit/reveal path as a counter.
 

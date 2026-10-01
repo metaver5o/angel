@@ -168,6 +168,10 @@
   .rights .n { color: var(--red); font-weight: 600 }
   .rights .m { color: var(--dim) }
   .rights code { font-family: var(--mono); font-size: 12px; word-break: break-all }
+  .owned { max-height: 360px; overflow: auto; padding-right: 2px }
+  .owned .tier .t { font-family: var(--mono); font-size: 14px; word-break: break-all }
+  .owned .tier .lock { margin-left: auto; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); white-space: nowrap }
+  .owned .tier .lock.on { color: #7a5806 }
   .check { display: flex; align-items: center; gap: 10px; font-size: 15px; min-height: 44px; cursor: pointer }
   .check input { width: 20px; height: 20px; accent-color: var(--copper) }
 
@@ -250,6 +254,11 @@
       <div class="hint" id="assetNameHint"></div>
       <div class="rights" id="assetRights" hidden></div>
     </div>
+    <div class="field" id="ownedField" hidden>
+      <span class="k">Your assets</span>
+      <div class="rows owned" id="ownedList"></div>
+      <div class="rights" id="ownedRights" hidden></div>
+    </div>
     <div class="field-row" id="supplyRow">
       <div class="field">
         <label class="k" for="supply">Supply</label>
@@ -319,7 +328,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.6.0'
+const VERSION = '0.7.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -439,15 +448,17 @@ async function connect(kind) {
   const address = await w.connect()
   if (!address) throw new Error('Wallet returned no address')
   state.wallet = { kind, address }
+  state.reinscribeAsset = null
   localStorage.setItem('angel:wallet', kind)
-  renderWallet(); renderAction(); renderPending()
+  renderWallet(); renderAction(); renderPending(); renderAssetSummary()
   loadBalances()
 }
 async function disconnect() {
   const kind = state.wallet?.kind
-  state.wallet = null; state.balances = null
+  state.wallet = null; state.balances = null; state.reinscribeAsset = null
+  owned.address = null; owned.list = null
   localStorage.removeItem('angel:wallet')
-  renderWallet(); renderAction(); renderPending()
+  renderWallet(); renderAction(); renderPending(); renderAssetSummary()
   if (kind) await WALLETS[kind].disconnect()
 }
 
@@ -663,9 +674,10 @@ const supplyEl = document.getElementById('supply')
 const divisibleEl = document.getElementById('divisible')
 const noCounterEl = document.getElementById('noCounter')
 
-/** The name typed (parent uppercased), '' when empty, null in numeric mode. */
+/** The asset in play: null in numeric mode, the picked asset when reinscribing, else the name typed ('' when empty). */
 function assetName() {
   if (state.assetMode === 'numeric') return null
+  if (state.assetMode === 'reinscribe') return state.reinscribeAsset ? (state.reinscribeAsset.asset_longname || state.reinscribeAsset.asset) : ''
   const raw = nameEl.value.trim()
   const [parent, ...sub] = raw.split('.')
   return sub.length ? `${parent.toUpperCase()}.${sub.join('.')}` : raw.toUpperCase()
@@ -693,11 +705,69 @@ async function lookupAsset(name) {
   lookups.set(name, info)
   return info
 }
+/**
+ * Everything the connected address owns, for the reinscribe picker. Paged
+ * through Core's cursor; each row is also seeded into the lookup cache so the
+ * rights panel needs no second request.
+ */
+const owned = { address: null, list: null, error: null }
+async function loadOwned() {
+  const address = state.wallet?.address
+  if (!address || !state.cp) { owned.address = null; owned.list = null; return }
+  if (owned.address === address && owned.list) return
+  owned.address = address; owned.list = null; owned.error = null
+  renderOwned()
+  try {
+    const list = []
+    let cursor = null
+    do {
+      const r = await fetch(`${state.cp}/addresses/${encodeURIComponent(address)}/assets/owned?limit=100${cursor ? `&cursor=${cursor}` : ''}`)
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok || body.error) throw new Error(body.error || `Counterparty said ${r.status}`)
+      list.push(...(body.result || []))
+      cursor = body.next_cursor
+    } while (cursor && list.length < 1000)
+    if (owned.address !== address) return         // wallet changed meanwhile
+    list.sort((a, b) => (b.last_issuance_block_index || 0) - (a.last_issuance_block_index || 0))
+    for (const a of list) lookups.set(a.asset_longname || a.asset, a)
+    owned.list = list
+  } catch (e) {
+    if (owned.address !== address) return
+    owned.error = e.message || String(e)
+  }
+  renderOwned()
+  renderAssetSummary()
+}
+function renderOwned() {
+  const el = document.getElementById('ownedList')
+  if (!state.wallet) return el.innerHTML = `<p class="note">Connect a wallet to see its assets.</p>`
+  if (owned.error) {
+    el.innerHTML = `<div class="alert err">Could not list your assets: ${escapeHtml(owned.error)}</div><button class="btn quiet" id="retryOwned">Try again</button>`
+    el.querySelector('#retryOwned').onclick = () => { owned.list = null; owned.address = null; loadOwned() }
+    return
+  }
+  if (!owned.list) return el.innerHTML = `<p class="note">Loading your assets…</p>`
+  if (!owned.list.length) return el.innerHTML = `<p class="note">This address owns no assets yet.</p>`
+  const sel = assetName()
+  el.innerHTML = owned.list.map(a => {
+    const name = a.asset_longname || a.asset
+    const supply = fmtAmt(Number(a.supply) / (a.divisible ? 1e8 : 1))
+    const what = a.mime_type && a.mime_type !== 'text/plain' ? a.mime_type : a.description ? 'description' : 'no description'
+    return `<button class="tier ${name === sel ? 'sel' : ''}" data-owned="${escapeHtml(name)}"><span class="radio"></span>
+      <span><div class="t">${escapeHtml(name)}</div><div class="d">${supply} · ${a.divisible ? 'divisible' : 'indivisible'} · ${escapeHtml(what)}</div></span>
+      ${a.description_locked ? '<span class="lock on">desc locked</span>' : a.locked ? '<span class="lock">supply locked</span>' : ''}</button>`
+  }).join('')
+  el.querySelectorAll('[data-owned]').forEach(b => b.onclick = () => {
+    state.reinscribeAsset = owned.list.find(a => (a.asset_longname || a.asset) === b.dataset.owned) || null
+    renderAssetSummary()
+  })
+}
+
 /** Kick off the lookups a name needs (itself, and its parent for a subasset); re-render when they land. */
 function scheduleLookups() {
   clearTimeout(lookupTimer)
   const n = assetName()
-  if (!n || !validName(n) || !state.cp) return
+  if (!n || !validName(n) || !state.cp || state.assetMode === 'reinscribe') return
   lookupTimer = setTimeout(async () => {
     const names = isSubasset(n) ? [n, parentOf(n)] : [n]
     await Promise.all(names.map(x => lookupAsset(x).catch(() => null)))
@@ -735,7 +805,7 @@ function nameCostXcp() {
 function assetProblem() {
   if (state.assetMode === 'numeric') return ''
   const n = assetName()
-  if (!n) return 'Enter a name.'
+  if (!n) return state.assetMode === 'reinscribe' ? 'Pick one of your assets.' : 'Enter a name.'
   if (n.length > 250) return 'Too long.'
   if (state.assetMode === 'named' && !NAMED_RE.test(n) && !SUBASSET_RE.test(n)) return 'Names are 4–12 uppercase letters (not starting with A), or PARENT.subasset.'
   if (state.assetMode === 'reinscribe' && !validName(n)) return 'That is not a valid asset name.'
@@ -775,7 +845,8 @@ function supplyRaw() {
 const shortAddr = (a) => a ? a.slice(0, 8) + '…' + a.slice(-6) : ''
 
 function renderRights(n) {
-  const el = document.getElementById('assetRights')
+  const el = document.getElementById(state.assetMode === 'reinscribe' ? 'ownedRights' : 'assetRights')
+  document.getElementById(state.assetMode === 'reinscribe' ? 'assetRights' : 'ownedRights').hidden = true
   const r = n && validName(n) ? rightsFor(n) : null
   const rows = []
   const yn = (ok, yes, no) => `<span class="${ok ? 'y' : 'n'}">${ok ? yes : no}</span>`
@@ -802,15 +873,14 @@ function renderRights(n) {
 function renderAssetSummary() {
   const mode = state.assetMode, n = assetName(), problem = assetProblem()
   const reinscribe = mode === 'reinscribe'
-  if (reinscribe) noCounterEl.checked = false
-  document.getElementById('assetNameField').hidden = mode === 'numeric'
+  if (reinscribe) { noCounterEl.checked = false; loadOwned(); renderOwned() }
+  document.getElementById('assetNameField').hidden = mode !== 'named'
+  document.getElementById('ownedField').hidden = !reinscribe
   document.getElementById('supplyRow').hidden = reinscribe
-  nameEl.placeholder = reinscribe ? 'GUARDIAN or A1654244359…' : 'GUARDIAN'
   const typedBad = !!problem && !!nameEl.value && !/^Checking/.test(problem)
   nameEl.classList.toggle('bad', typedBad)
   const hint = document.getElementById('assetNameHint')
   hint.textContent = problem && nameEl.value ? problem
-    : reinscribe ? 'Any asset this address owns: named, numeric or subasset.'
     : 'Uppercase letters only, can\'t start with A. Subassets: PARENT.name (you must own PARENT).'
   hint.classList.toggle('bad', typedBad)
   renderRights(n)
@@ -818,7 +888,7 @@ function renderAssetSummary() {
 
   const r = n ? rightsFor(n) : null
   document.getElementById('sumAsset').textContent = mode === 'numeric' ? 'numeric (free)'
-    : !n ? (reinscribe ? 'reinscribe · pick an asset' : 'named · 0.5 XCP')
+    : !n ? (reinscribe ? 'reinscribe · pick one of yours' : 'named · 0.5 XCP')
     : reinscribe ? `${n} · reinscribe`
     : r?.known && r.exists ? `${n} · reissue (yours)` : `${n} · ${nameCostXcp()} XCP`
   document.getElementById('sumSupply').textContent = reinscribe ? 'unchanged'
@@ -835,7 +905,7 @@ document.getElementById('assetModes').addEventListener('click', (e) => {
   state.assetMode = el.dataset.mode
   document.querySelectorAll('[data-mode]').forEach(t => t.classList.toggle('sel', t === el))
   renderAssetSummary()
-  if (state.assetMode !== 'numeric') nameEl.focus()
+  if (state.assetMode === 'named') nameEl.focus()
 })
 nameEl.addEventListener('input', renderAssetSummary)
 supplyEl.addEventListener('input', renderAssetSummary)

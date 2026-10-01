@@ -18,7 +18,7 @@
 		}
 
 		# API root (network), compose, balances, asset lookup, relay + lookup of a transaction.
-		@allowed path_regexp ^/cp/v2(/|/addresses/[^/]+/compose/issuance|/addresses/[^/]+/balances(/[^/]+)?|/assets/[^/]+|/bitcoin/transactions(/[0-9a-fA-F]{64})?)?$
+		@allowed path_regexp ^/cp/v2(/|/addresses/[^/]+/compose/issuance|/addresses/[^/]+/balances(/[^/]+)?|/addresses/[^/]+/assets/owned|/assets/[^/]+|/bitcoin/transactions(/[0-9a-fA-F]{64})?)?$
 		handle @allowed {
 			uri strip_prefix /cp
 			reverse_proxy {$CP_UPSTREAM}
