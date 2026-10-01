@@ -9,3 +9,5 @@ data/
 
 .DS_Store
 *.log
+deploy.log
+.deploy.lock
