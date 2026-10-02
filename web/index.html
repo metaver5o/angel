@@ -168,6 +168,12 @@
   .rights .n { color: var(--red); font-weight: 600 }
   .rights .m { color: var(--dim) }
   .rights code { font-family: var(--mono); font-size: 12px; word-break: break-all }
+  .prefixed { display: flex; align-items: stretch }
+  .prefixed .prefix {
+    display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--line-strong); border-right: 0;
+    border-radius: 10px 0 0 10px; background: var(--bg); font-family: var(--mono); font-size: 14px; color: var(--dim); white-space: nowrap; max-width: 55%; overflow: hidden; text-overflow: ellipsis;
+  }
+  .prefixed .prefix:not([hidden]) + input { border-radius: 0 10px 10px 0 }
   .owned { max-height: 360px; overflow: auto; padding-right: 2px }
   .owned .tier .t { font-family: var(--mono); font-size: 14px; word-break: break-all }
   .owned .tier .lock { margin-left: auto; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); white-space: nowrap }
@@ -249,8 +255,16 @@
       <button class="tier" data-mode="reinscribe"><span class="radio"></span><span><div class="t">Reinscribe an asset you own</div><div class="d">Put a new file on an existing asset · supply untouched · no XCP</div></span></button>
     </div>
     <div class="field" id="assetNameField" hidden>
-      <label class="k" for="assetName">Name</label>
-      <input type="text" id="assetName" placeholder="GUARDIAN" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+      <label class="check"><input type="checkbox" id="subOf" /> Subasset of an asset you own</label>
+      <div class="field" id="parentField" hidden>
+        <span class="k">Parent (your assets)</span>
+        <div class="rows owned" id="parentList"></div>
+      </div>
+      <label class="k" for="assetName" id="assetNameLabel">Name</label>
+      <div class="prefixed">
+        <span class="prefix" id="subPrefix" hidden></span>
+        <input type="text" id="assetName" placeholder="GUARDIAN" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+      </div>
       <div class="hint" id="assetNameHint"></div>
       <div class="rights" id="assetRights" hidden></div>
     </div>
@@ -329,7 +343,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.8.1'
+const VERSION = '0.9.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -477,7 +491,7 @@ async function connect(kind) {
   const address = await w.connect()
   if (!address) throw new Error('Wallet returned no address')
   state.wallet = { kind, address }
-  state.reinscribeAsset = null
+  state.reinscribeAsset = null; state.subParent = null
   localStorage.setItem('angel:wallet', kind)
   track('wallet_connected', { kind })
   renderWallet(); renderAction(); renderPending(); renderAssetSummary()
@@ -486,7 +500,7 @@ async function connect(kind) {
 async function disconnect() {
   const kind = state.wallet?.kind
   track('wallet_disconnected', { kind })
-  state.wallet = null; state.balances = null; state.reinscribeAsset = null
+  state.wallet = null; state.balances = null; state.reinscribeAsset = null; state.subParent = null
   owned.address = null; owned.list = null
   localStorage.removeItem('angel:wallet')
   renderWallet(); renderAction(); renderPending(); renderAssetSummary()
@@ -704,18 +718,28 @@ function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFix
 // ---------------------------------------------------------------------------
 const NAMED_RE = /^[B-Z][A-Z]{3,11}$/
 const NUMERIC_RE = /^A\d{17,20}$/
-const SUBASSET_RE = /^[B-Z][A-Z]{3,11}\.[a-zA-Z0-9.\-_@!]+$/
+// Parent: a named or numeric asset; child: Counterparty's subasset alphabet.
+const SUBASSET_RE = /^([B-Z][A-Z]{3,11}|A\d{17,20})\.[a-zA-Z0-9.\-_@!]+$/
+const CHILD_RE = /^[a-zA-Z0-9.\-_@!]+$/
 const nameEl = document.getElementById('assetName')
 const supplyEl = document.getElementById('supply')
 const divisibleEl = document.getElementById('divisible')
 const lockEl = document.getElementById('lockSupply')
 const noCounterEl = document.getElementById('noCounter')
+const subOfEl = document.getElementById('subOf')
 
-/** The asset in play: null in numeric mode, the picked asset when reinscribing, else the name typed ('' when empty). */
+/** Counters need a segwit source: Core refuses taproot encoding from a legacy address. */
+const isSegwit = (address) => /^(bc1|tb1|bcrt1)/i.test(address || '')
+
+/**
+ * The asset in play: null in numeric mode, the picked asset when reinscribing,
+ * PARENT.child when a parent was picked, else the name typed ('' when empty).
+ */
 function assetName() {
   if (state.assetMode === 'numeric') return null
   if (state.assetMode === 'reinscribe') return state.reinscribeAsset ? (state.reinscribeAsset.asset_longname || state.reinscribeAsset.asset) : ''
   const raw = nameEl.value.trim()
+  if (subOfEl.checked) return state.subParent && raw ? `${state.subParent}.${raw}` : ''
   const [parent, ...sub] = raw.split('.')
   return sub.length ? `${parent.toUpperCase()}.${sub.join('.')}` : raw.toUpperCase()
 }
@@ -777,28 +801,42 @@ async function loadOwned() {
   renderOwned()
   renderAssetSummary()
 }
-function renderOwned() {
-  const el = document.getElementById('ownedList')
+/** The owned-assets picker, used for reinscription (any asset) and for a subasset's parent (top-level assets). */
+function renderOwnedList(el, { filter = () => true, selected, onPick, empty }) {
   if (!state.wallet) return el.innerHTML = `<p class="note">Connect a wallet to see its assets.</p>`
   if (owned.error) {
-    el.innerHTML = `<div class="alert err">Could not list your assets: ${escapeHtml(owned.error)}</div><button class="btn quiet" id="retryOwned">Try again</button>`
-    el.querySelector('#retryOwned').onclick = () => { owned.list = null; owned.address = null; loadOwned() }
+    el.innerHTML = `<div class="alert err">Could not list your assets: ${escapeHtml(owned.error)}</div><button class="btn quiet" data-retry>Try again</button>`
+    el.querySelector('[data-retry]').onclick = () => { owned.list = null; owned.address = null; loadOwned() }
     return
   }
   if (!owned.list) return el.innerHTML = `<p class="note">Loading your assets…</p>`
-  if (!owned.list.length) return el.innerHTML = `<p class="note">This address owns no assets yet.</p>`
-  const sel = assetName()
-  el.innerHTML = owned.list.map(a => {
+  const list = owned.list.filter(filter)
+  if (!list.length) return el.innerHTML = `<p class="note">${empty}</p>`
+  el.innerHTML = list.map(a => {
     const name = a.asset_longname || a.asset
     const supply = fmtAmt(Number(a.supply) / (a.divisible ? 1e8 : 1))
     const what = a.mime_type && a.mime_type !== 'text/plain' ? a.mime_type : a.description ? 'description' : 'no description'
-    return `<button class="tier ${name === sel ? 'sel' : ''}" data-owned="${escapeHtml(name)}"><span class="radio"></span>
+    return `<button class="tier ${name === selected ? 'sel' : ''}" data-owned="${escapeHtml(name)}"><span class="radio"></span>
       <span><div class="t">${escapeHtml(name)}</div><div class="d">${supply} · ${a.divisible ? 'divisible' : 'indivisible'} · ${escapeHtml(what)}</div></span>
       ${a.description_locked ? '<span class="lock on">desc locked</span>' : a.locked ? '<span class="lock">supply locked</span>' : ''}</button>`
   }).join('')
   el.querySelectorAll('[data-owned]').forEach(b => b.onclick = () => {
-    state.reinscribeAsset = owned.list.find(a => (a.asset_longname || a.asset) === b.dataset.owned) || null
+    onPick(list.find(a => (a.asset_longname || a.asset) === b.dataset.owned) || null)
     renderAssetSummary()
+  })
+}
+function renderOwned() {
+  renderOwnedList(document.getElementById('ownedList'), {
+    selected: state.assetMode === 'reinscribe' ? assetName() : null,
+    onPick: (a) => { state.reinscribeAsset = a },
+    empty: 'This address owns no assets yet.',
+  })
+  renderOwnedList(document.getElementById('parentList'), {
+    // Subassets hang off top-level assets only (named or numeric), never off another subasset.
+    filter: (a) => !a.asset_longname,
+    selected: state.subParent,
+    onPick: (a) => { state.subParent = a ? a.asset : null },
+    empty: 'This address owns no top-level assets to parent a subasset.',
   })
 }
 
@@ -844,6 +882,11 @@ function nameCostXcp() {
 function assetProblem() {
   if (state.assetMode === 'numeric') return ''
   const n = assetName()
+  if (state.assetMode === 'named' && subOfEl.checked) {
+    if (!state.subParent) return 'Pick the parent asset.'
+    if (!nameEl.value.trim()) return 'Enter the subasset name (the part after the dot).'
+    if (!CHILD_RE.test(nameEl.value.trim())) return 'Subasset names use letters, digits and . - _ @ !'
+  }
   if (!n) return state.assetMode === 'reinscribe' ? 'Pick one of your assets.' : 'Enter a name.'
   if (n.length > 250) return 'Too long.'
   if (state.assetMode === 'named' && !NAMED_RE.test(n) && !SUBASSET_RE.test(n)) return 'Names are 4–12 uppercase letters (not starting with A), or PARENT.subasset.'
@@ -912,15 +955,25 @@ function renderRights(n) {
 function renderAssetSummary() {
   const mode = state.assetMode, n = assetName(), problem = assetProblem()
   const reinscribe = mode === 'reinscribe'
-  if (reinscribe) { noCounterEl.checked = false; loadOwned(); renderOwned() }
+  const subOf = mode === 'named' && subOfEl.checked
+  if (reinscribe) noCounterEl.checked = false
+  if (reinscribe || subOf) { loadOwned(); renderOwned() }
   document.getElementById('assetNameField').hidden = mode !== 'named'
+  document.getElementById('parentField').hidden = !subOf
   document.getElementById('ownedField').hidden = !reinscribe
   document.getElementById('supplyRow').hidden = reinscribe
+  const prefix = document.getElementById('subPrefix')
+  prefix.hidden = !(subOf && state.subParent)
+  prefix.textContent = state.subParent ? `${state.subParent}.` : ''
+  document.getElementById('assetNameLabel').textContent = subOf ? 'Subasset name' : 'Name'
+  nameEl.placeholder = subOf ? 'name after the dot' : 'GUARDIAN'
+  nameEl.autocapitalize = subOf ? 'none' : 'characters'
   const typedBad = !!problem && !!nameEl.value && !/^Checking/.test(problem)
   nameEl.classList.toggle('bad', typedBad)
   const hint = document.getElementById('assetNameHint')
   hint.textContent = problem && nameEl.value ? problem
-    : 'Uppercase letters only, can\'t start with A. Subassets: PARENT.name (you must own PARENT).'
+    : subOf ? 'Letters, digits and . - _ @ ! — case kept as typed. Burns 0.25 XCP.'
+    : 'Uppercase letters only, can\'t start with A. Or type PARENT.name for a subasset of an asset you own.'
   hint.classList.toggle('bad', typedBad)
   renderRights(n)
   scheduleLookups()
@@ -947,6 +1000,7 @@ document.getElementById('assetModes').addEventListener('click', (e) => {
   if (state.assetMode === 'named') nameEl.focus()
 })
 nameEl.addEventListener('input', renderAssetSummary)
+subOfEl.addEventListener('change', () => { nameEl.value = ''; renderAssetSummary(); if (!subOfEl.checked) nameEl.focus() })
 supplyEl.addEventListener('input', renderAssetSummary)
 divisibleEl.addEventListener('change', renderAssetSummary)
 lockEl.addEventListener('change', renderAssetSummary)
@@ -1025,7 +1079,7 @@ async function mint() {
   const rate = currentRate()
   const reinscribe = state.assetMode === 'reinscribe'
   const flow = noCounterEl.checked && !reinscribe ? 'plain' : 'counter'
-  if (!rate || assetProblem() || (flow === 'counter' && !state.file)) return
+  if (!rate || assetProblem() || (flow === 'counter' && (!state.file || !isSegwit(source)))) return
   const name = assetName()
   const existing = name ? rightsFor(name).info : null
   // A reinscription is a reissuance: quantity 0 and the asset's own
@@ -1279,6 +1333,7 @@ function renderAction() {
     : assetProblem() ? `Asset name: ${assetProblem()} (step 2)`
     : !reinscribe && supplyRaw() === null ? 'Supply must be a whole number (step 2).'
     : xcpNeeded && Number.isFinite(xcpHave) && xcpHave < xcpNeeded ? `A named asset burns ${xcpNeeded} XCP and this address has ${fmtAmt(xcpHave)}.`
+    : counter && !isSegwit(state.wallet.address) ? `Counters need a segwit address (bc1…) — Counterparty refuses the taproot envelope from a legacy one. Switch your wallet to a segwit or taproot account${reinscribe ? '' : ', or tick "Without counter" for a plain issuance'}.`
     : counter && !state.file ? (reinscribe ? 'Choose the new file (step 3).' : 'Choose a file (step 3), or tick "Without counter" in step 2.')
     : !rate ? 'Enter a custom fee rate (step 4), at least 0.1 sat/vB.'
     : tooBig ? `This file would make a ${est.revealWeight.toLocaleString('en-US')} weight-unit reveal, past the 400,000 relay cap. Use a smaller file.` : ''

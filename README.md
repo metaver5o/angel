@@ -32,10 +32,17 @@ The footer shows two versions:
 ## What you can mint
 
 - **A counter** — drop a file. Numeric name (free) or a **named asset** (4–12
-  uppercase letters not starting with A, or `PARENT.subasset`; Core burns
-  0.5 XCP for a name, 0.25 for a subasset). Supply and divisibility are yours
-  to set; the default is 1, indivisible, and **supply locked** (the lock is
-  permanent — untick *Lock supply* to leave it open).
+  uppercase letters not starting with A; Core burns 0.5 XCP). Supply and
+  divisibility are yours to set; the default is 1, indivisible, and **supply
+  locked** (the lock is permanent — untick *Lock supply* to leave it open).
+  Counters need a **segwit address** (`bc1q…`/`bc1p…`): Counterparty refuses
+  the taproot envelope from a legacy `1…` source. Plain issuances work from
+  any address.
+- **A subasset** — in *Named asset*, tick *Subasset of an asset you own*,
+  pick the parent from the list of your top-level assets (named or numeric),
+  and type the part after the dot (letters, digits, `. - _ @ !`, case kept).
+  Burns 0.25 XCP. Only the parent's owner can issue it, which is why the
+  parent is picked rather than typed; typing `PARENT.name` still works.
 - **A plain asset, no counter** — tick *Without counter* in the Asset step
   (the file step disappears). Same name/supply options;
   one ordinary Counterparty issuance, signed by the wallet and relayed.
