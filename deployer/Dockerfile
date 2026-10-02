@@ -1,7 +1,8 @@
 FROM python:3.12-alpine
 # git for pulls; safe.directory '*' because the bind-mounted repo is owned by
 # the host user, not root inside the container.
-RUN apk add --no-cache git && git config --system --add safe.directory '*'
+# docker-cli launches the build-on-push container through the mounted socket.
+RUN apk add --no-cache git docker-cli && git config --system --add safe.directory '*'
 WORKDIR /app
 COPY server.py .
 EXPOSE 8090

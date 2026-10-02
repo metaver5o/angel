@@ -15,6 +15,14 @@ Fronted by Caddy at the same origin as the mint app:
 A background poller auto-deploys every POLL_SECONDS, so there is no cron: other
 people push to main and this pulls it in within a minute. Its own failures go
 to the same event log, as `deployer_error`.
+
+Every new commit is also built, like the Pages workflow: a throwaway
+`docker:cli` container runs `docker compose up -d --build` for proxy and
+deployer (never the tunnel, so its URL survives). It runs outside this
+container because a rebuild of the deployer recreates it, and a process can't
+recreate its own container mid-command. It writes logs/build.log and
+logs/build-status.json, and logs build_start/build_done events. Needs the
+Docker socket mounted.
 """
 from __future__ import annotations
 
@@ -35,6 +43,18 @@ GH = os.environ.get("GITHUB_REPO", "metaver5o/angel")
 POLL = int(os.environ.get("POLL_SECONDS", "60"))
 EVENT_LOG = os.environ.get("EVENT_LOG", os.path.join(REPO, "logs", "events.jsonl"))
 MAX_EVENT_BYTES = 16 * 1024
+
+# Build-on-push. HOST_REPO is the repo's path on the host: the builder runs
+# compose there so relative bind mounts (./web, ./Caddyfile) resolve to host
+# paths the Docker daemon understands.
+HOST_REPO = os.environ.get("HOST_REPO", "")
+PROJECT = os.environ.get("COMPOSE_PROJECT", "angel")
+BUILDER = f"{PROJECT}-builder"
+BUILDER_IMAGE = os.environ.get("BUILDER_IMAGE", "docker:cli")
+BUILD_STATUS = os.path.join(REPO, "logs", "build-status.json")
+# Single-file mount: a git rewrite swaps its inode, so the proxy must be
+# recreated (not reloaded) to see the new file.
+RECREATE_PROXY_ON = ("Caddyfile",)
 
 _lock = threading.Lock()
 _log_lock = threading.Lock()
@@ -100,6 +120,7 @@ def version() -> dict:
         "latest": r, "latest_short": r[:7],
         "branch": BRANCH, "repo": GH,
         "up_to_date": bool(d) and d == r,
+        "build": build_status(),
     }
 
 
@@ -118,6 +139,86 @@ def deploy() -> dict:
     }
 
 
+def build_status() -> dict:
+    try:
+        with open(BUILD_STATUS, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _write_status(status: dict) -> None:
+    os.makedirs(os.path.dirname(BUILD_STATUS), exist_ok=True)
+    with open(BUILD_STATUS, "w", encoding="utf-8") as f:
+        json.dump(status, f)
+
+
+def _builder_running() -> bool:
+    r = subprocess.run(["docker", "ps", "-q", "-f", f"name=^{BUILDER}$"],
+                       capture_output=True, text=True, timeout=30)
+    return bool(r.stdout.strip())
+
+
+def _changed_since(base: str | None, head: str) -> list[str] | None:
+    """Files changed between the last built commit and head, or None if unknown."""
+    if not base:
+        return None
+    r = _git("diff", "--name-only", base, head)
+    return r.stdout.split() if r.returncode == 0 else None
+
+
+def maybe_build(via: str, force: bool = False) -> dict:
+    """Start a build of the checked-out commit unless it was already attempted
+    (or one is running). A failed build is not retried automatically - the
+    Deploy button forces a retry."""
+    head = _head()
+    status = build_status()
+    if not HOST_REPO:
+        return {"started": False, "reason": "HOST_REPO not set"}
+    if _builder_running():
+        return {"started": False, "reason": "build already running", "status": status}
+    if not force and status.get("sha") == head:
+        return {"started": False, "reason": "already built", "status": status}
+
+    changed = _changed_since(status.get("sha"), head)
+    recreate_proxy = changed is None or any(f in RECREATE_PROXY_ON for f in changed)
+    short = head[:7]
+    script = f"""
+set -u
+mkdir -p logs
+log=logs/build.log
+echo "=== build {short} via {via} $(date -u) ===" >>$log
+ok=1
+docker compose -p {PROJECT} up -d --build --remove-orphans proxy deployer >>$log 2>&1 || ok=0
+if [ $ok = 1 ] && [ {int(recreate_proxy)} = 1 ]; then
+  docker compose -p {PROJECT} up -d --no-deps --force-recreate proxy >>$log 2>&1 || ok=0
+fi
+if [ $ok = 1 ]; then st=ok; else st=failed; fi
+now=$(date +%s)
+printf '{{"sha":"{head}","state":"%s","finished":%s,"via":"{via}"}}\\n' "$st" "$now" > logs/build-status.json
+printf '{{"t":%s,"src":"builder","event":"build_done","data":{{"sha":"{short}","state":"%s"}}}}\\n' "$now" "$st" >> logs/events.jsonl
+echo "=== {short} $st ===" >>$log
+"""
+    _write_status({"sha": head, "state": "running", "started": time.time(), "via": via})
+    r = subprocess.run(
+        ["docker", "run", "--rm", "-d", "--name", BUILDER,
+         "-v", "/var/run/docker.sock:/var/run/docker.sock",
+         "-v", f"{HOST_REPO}:{HOST_REPO}", "-w", HOST_REPO,
+         "-e", f"HOST_REPO={HOST_REPO}",
+         BUILDER_IMAGE, "sh", "-c", script],
+        capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        _write_status({"sha": head, "state": "failed", "finished": time.time(), "via": via,
+                       "error": r.stderr.strip()[-500:]})
+        log_event({"t": time.time(), "src": "deployer", "event": "deployer_error",
+                   "data": {"where": "build-start", "error": r.stderr.strip()[-500:]}})
+        return {"started": False, "reason": "builder failed to start", "error": r.stderr.strip()[-500:]}
+    log_event({"t": time.time(), "src": "deployer", "event": "build_start",
+               "data": {"sha": short, "via": via, "recreate_proxy": recreate_proxy,
+                        "changed": changed}})
+    return {"started": True, "sha": short, "recreate_proxy": recreate_proxy}
+
+
 def _poller():
     while POLL > 0:
         time.sleep(POLL)
@@ -129,6 +230,7 @@ def _poller():
                 if not result["ok"]:
                     log_event({"t": time.time(), "src": "deployer", "event": "deployer_error",
                                "data": {"where": "deploy", "error": result["error"]}})
+            maybe_build("poll")
         except Exception as e:  # noqa: BLE001
             log_event({"t": time.time(), "src": "deployer", "event": "deployer_error",
                        "data": {"where": "poll", "error": str(e)}})
@@ -227,6 +329,9 @@ class H(BaseHTTPRequestHandler):
         try:
             result = deploy()
             log_event({"t": time.time(), "src": "deployer", "event": "deploy", "data": {**result, "via": "button"}})
+            # The button is the manual retry: build even if this commit was
+            # already attempted (e.g. a failed build).
+            result["build"] = maybe_build("button", force=True)
             self._send(result)
         except Exception as e:
             log_event({"t": time.time(), "src": "deployer", "event": "deployer_error",

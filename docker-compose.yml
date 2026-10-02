@@ -5,7 +5,9 @@
 #             deployer. One origin behind one tunnel.
 #   deployer  pulls origin/main and hard-resets the working tree. Polls every
 #             60s (so no cron) and backs the in-page Deploy button. web/ is a
-#             live volume mount, so a pull republishes instantly. Also keeps
+#             live volume mount, so a pull republishes instantly. Every new
+#             commit is also built (proxy + deployer, never the tunnel) by a
+#             throwaway docker:cli container: logs/build.log. Also keeps
 #             the activity/error log the page reports to: logs/events.jsonl
 #             (gitignored) — `tail -f logs/events.jsonl` or
 #             `docker compose logs -f deployer`.
@@ -45,10 +47,19 @@ services:
       POLL_SECONDS: "60"
       DEPLOY_TOKEN: ${DEPLOY_TOKEN:-}
       EVENT_LOG: /repo/logs/events.jsonl
+      # Build-on-push: where this repo lives on the host, and the compose
+      # project to rebuild. The builder container passes HOST_REPO back in, so
+      # this resolves the same whether compose runs on the host or in it.
+      HOST_REPO: ${HOST_REPO:-${PWD}}
+      COMPOSE_PROJECT: angel
     volumes:
       # The repo itself (rw): a pull here updates web/, which the proxy serves
       # live. .env is untracked, so reset --hard never touches it.
       - ./:/repo
+      # Docker socket, to rebuild proxy/deployer on every push. Root-equivalent
+      # on the host: fine for this test stack, not for prod. /__deploy (which
+      # can trigger a build) needs DEPLOY_TOKEN, so keep that secret.
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   tunnel:
