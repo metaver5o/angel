@@ -38,8 +38,8 @@ The footer shows two versions:
   Counters need a **segwit address** (`bc1q…`/`bc1p…`): Counterparty refuses
   the taproot envelope from a legacy `1…` source. Plain issuances work from
   any address.
-- **A subasset** — in *Named asset*, tick *Subasset of an asset you own*,
-  pick the parent from the list of your top-level assets (named or numeric),
+- **A subasset** — pick *Subasset* in the Asset step, choose the parent from
+  the list of your top-level assets (named or numeric),
   and type the part after the dot (letters, digits, `. - _ @ !`, case kept).
   Burns 0.25 XCP. Only the parent's owner can issue it, which is why the
   parent is picked rather than typed; typing `PARENT.name` still works.

@@ -251,11 +251,11 @@
     <h2><span class="n">2</span>Asset</h2>
     <div class="rows" id="assetModes">
       <button class="tier sel" data-mode="numeric"><span class="radio"></span><span><div class="t">Numeric name</div><div class="d">Drawn at random, e.g. A1654244359… · free</div></span></button>
-      <button class="tier" data-mode="named"><span class="radio"></span><span><div class="t">Named asset</div><div class="d">4–12 letters, or PARENT.subasset · burns 0.5 XCP (0.25 for a subasset)</div></span></button>
+      <button class="tier" data-mode="named"><span class="radio"></span><span><div class="t">Named asset</div><div class="d">4–12 uppercase letters · burns 0.5 XCP</div></span></button>
+      <button class="tier" data-mode="subasset"><span class="radio"></span><span><div class="t">Subasset</div><div class="d">PARENT.name under an asset you own · burns 0.25 XCP</div></span></button>
       <button class="tier" data-mode="reinscribe"><span class="radio"></span><span><div class="t">Reinscribe an asset you own</div><div class="d">Put a new file on an existing asset · supply untouched · no XCP</div></span></button>
     </div>
     <div class="field" id="assetNameField" hidden>
-      <label class="check"><input type="checkbox" id="subOf" /> Subasset of an asset you own</label>
       <div class="field" id="parentField" hidden>
         <span class="k">Parent (your assets)</span>
         <div class="rows owned" id="parentList"></div>
@@ -343,7 +343,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.9.0'
+const VERSION = '0.9.1'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -726,7 +726,6 @@ const supplyEl = document.getElementById('supply')
 const divisibleEl = document.getElementById('divisible')
 const lockEl = document.getElementById('lockSupply')
 const noCounterEl = document.getElementById('noCounter')
-const subOfEl = document.getElementById('subOf')
 
 /** Counters need a segwit source: Core refuses taproot encoding from a legacy address. */
 const isSegwit = (address) => /^(bc1|tb1|bcrt1)/i.test(address || '')
@@ -739,7 +738,7 @@ function assetName() {
   if (state.assetMode === 'numeric') return null
   if (state.assetMode === 'reinscribe') return state.reinscribeAsset ? (state.reinscribeAsset.asset_longname || state.reinscribeAsset.asset) : ''
   const raw = nameEl.value.trim()
-  if (subOfEl.checked) return state.subParent && raw ? `${state.subParent}.${raw}` : ''
+  if (state.assetMode === 'subasset') return state.subParent && raw ? `${state.subParent}.${raw}` : ''
   const [parent, ...sub] = raw.split('.')
   return sub.length ? `${parent.toUpperCase()}.${sub.join('.')}` : raw.toUpperCase()
 }
@@ -872,7 +871,7 @@ function rightsFor(name) {
 /** XCP Core burns for the name: 0.5 for a new named asset, 0.25 for a new subasset, nothing otherwise. */
 function nameCostXcp() {
   const n = assetName()
-  if (!n || state.assetMode !== 'named' || NUMERIC_RE.test(n)) return 0
+  if (!n || !['named', 'subasset'].includes(state.assetMode) || NUMERIC_RE.test(n)) return 0
   const r = rightsFor(n)
   if (r.known && r.exists) return 0            // a reissue
   return isSubasset(n) ? 0.25 : 0.5
@@ -882,7 +881,7 @@ function nameCostXcp() {
 function assetProblem() {
   if (state.assetMode === 'numeric') return ''
   const n = assetName()
-  if (state.assetMode === 'named' && subOfEl.checked) {
+  if (state.assetMode === 'subasset') {
     if (!state.subParent) return 'Pick the parent asset.'
     if (!nameEl.value.trim()) return 'Enter the subasset name (the part after the dot).'
     if (!CHILD_RE.test(nameEl.value.trim())) return 'Subasset names use letters, digits and . - _ @ !'
@@ -940,7 +939,7 @@ function renderRights(n) {
     const can = r.owned && !r.descriptionLocked
     rows.push(`<div>${yn(can, 'Can reinscribe', 'Cannot reinscribe')}${r.owned ? `<span class="m">${yn(!r.supplyLocked, 'can add supply', 'cannot add supply')}</span>` : ''}</div>`)
   } else if (r?.known && !r.exists) {
-    rows.push(state.assetMode === 'named'
+    rows.push(state.assetMode !== 'reinscribe'
       ? `<div><span class="y">Available</span><span class="m">new asset · burns ${isSubasset(n) ? 0.25 : 0.5} XCP</span></div>`
       : `<div><span class="n">No such asset</span></div>`)
   }
@@ -955,10 +954,10 @@ function renderRights(n) {
 function renderAssetSummary() {
   const mode = state.assetMode, n = assetName(), problem = assetProblem()
   const reinscribe = mode === 'reinscribe'
-  const subOf = mode === 'named' && subOfEl.checked
+  const subOf = mode === 'subasset'
   if (reinscribe) noCounterEl.checked = false
   if (reinscribe || subOf) { loadOwned(); renderOwned() }
-  document.getElementById('assetNameField').hidden = mode !== 'named'
+  document.getElementById('assetNameField').hidden = mode !== 'named' && !subOf
   document.getElementById('parentField').hidden = !subOf
   document.getElementById('ownedField').hidden = !reinscribe
   document.getElementById('supplyRow').hidden = reinscribe
@@ -980,7 +979,7 @@ function renderAssetSummary() {
 
   const r = n ? rightsFor(n) : null
   document.getElementById('sumAsset').textContent = mode === 'numeric' ? 'numeric (free)'
-    : !n ? (reinscribe ? 'reinscribe · pick one of yours' : 'named · 0.5 XCP')
+    : !n ? (reinscribe ? 'reinscribe · pick one of yours' : subOf ? 'subasset · 0.25 XCP' : 'named · 0.5 XCP')
     : reinscribe ? `${n} · reinscribe`
     : r?.known && r.exists ? `${n} · reissue (yours)` : `${n} · ${nameCostXcp()} XCP`
   document.getElementById('sumSupply').textContent = reinscribe ? 'unchanged'
@@ -1000,7 +999,6 @@ document.getElementById('assetModes').addEventListener('click', (e) => {
   if (state.assetMode === 'named') nameEl.focus()
 })
 nameEl.addEventListener('input', renderAssetSummary)
-subOfEl.addEventListener('change', () => { nameEl.value = ''; renderAssetSummary(); if (!subOfEl.checked) nameEl.focus() })
 supplyEl.addEventListener('input', renderAssetSummary)
 divisibleEl.addEventListener('change', renderAssetSummary)
 lockEl.addEventListener('change', renderAssetSummary)
