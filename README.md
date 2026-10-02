@@ -34,7 +34,8 @@ The footer shows two versions:
 - **A counter** — drop a file. Numeric name (free) or a **named asset** (4–12
   uppercase letters not starting with A, or `PARENT.subasset`; Core burns
   0.5 XCP for a name, 0.25 for a subasset). Supply and divisibility are yours
-  to set; the default is 1, indivisible.
+  to set; the default is 1, indivisible, and **supply locked** (the lock is
+  permanent — untick *Lock supply* to leave it open).
 - **A plain asset, no counter** — tick *Without counter* in the Asset step
   (the file step disappears). Same name/supply options;
   one ordinary Counterparty issuance, signed by the wallet and relayed.

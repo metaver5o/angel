@@ -265,6 +265,7 @@
         <input type="number" id="supply" inputmode="numeric" min="0" step="1" value="1" />
       </div>
       <label class="check"><input type="checkbox" id="divisible" /> Divisible (8 decimals)</label>
+      <label class="check"><input type="checkbox" id="lockSupply" checked /> Lock supply — permanent, no more can ever be issued</label>
       <label class="check"><input type="checkbox" id="noCounter" /> Without counter — just the asset, no file (a plain issuance)</label>
     </div>
   </section>
@@ -328,7 +329,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.8.0'
+const VERSION = '0.8.1'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -707,6 +708,7 @@ const SUBASSET_RE = /^[B-Z][A-Z]{3,11}\.[a-zA-Z0-9.\-_@!]+$/
 const nameEl = document.getElementById('assetName')
 const supplyEl = document.getElementById('supply')
 const divisibleEl = document.getElementById('divisible')
+const lockEl = document.getElementById('lockSupply')
 const noCounterEl = document.getElementById('noCounter')
 
 /** The asset in play: null in numeric mode, the picked asset when reinscribing, else the name typed ('' when empty). */
@@ -929,7 +931,7 @@ function renderAssetSummary() {
     : reinscribe ? `${n} · reinscribe`
     : r?.known && r.exists ? `${n} · reissue (yours)` : `${n} · ${nameCostXcp()} XCP`
   document.getElementById('sumSupply').textContent = reinscribe ? 'unchanged'
-    : (supplyRaw() === null ? '?' : supplyEl.value.trim()) + (divisibleEl.checked ? ' · divisible' : '')
+    : (supplyRaw() === null ? '?' : supplyEl.value.trim()) + (divisibleEl.checked ? ' · divisible' : '') + (lockEl.checked ? ' · locked' : ' · open')
   document.getElementById('sumType').textContent = noCounterEl.checked ? 'plain issuance · no counter'
     : state.file ? (reinscribe ? 'reinscription · native envelope' : 'counter · native envelope') : (reinscribe ? 'reinscription (needs a file)' : 'counter (needs a file)')
   document.getElementById('fileCard').hidden = noCounterEl.checked
@@ -947,6 +949,7 @@ document.getElementById('assetModes').addEventListener('click', (e) => {
 nameEl.addEventListener('input', renderAssetSummary)
 supplyEl.addEventListener('input', renderAssetSummary)
 divisibleEl.addEventListener('change', renderAssetSummary)
+lockEl.addEventListener('change', renderAssetSummary)
 
 // ---------------------------------------------------------------------------
 // Fee tiers
@@ -1032,14 +1035,18 @@ async function mint() {
   const divisible = existing ? existing.divisible : divisibleEl.checked
   if (quantity === null) return
   state.cost = null; state.error = null; state.flow = flow
-  track('mint_start', { flow, mode: state.assetMode, asset: name || null, rate, quantity, divisible, size: state.file?.size ?? null, mime: state.file ? AngelMint.guessContentType(state.file) : null })
+  // The supply lock is permanent. On by default for new assets; a
+  // reinscription never touches it (that would freeze the asset as a side
+  // effect of putting a new file on it).
+  const lock = !reinscribe && lockEl.checked
+  track('mint_start', { flow, mode: state.assetMode, asset: name || null, rate, quantity, divisible, lock, size: state.file?.size ?? null, mime: state.file ? AngelMint.guessContentType(state.file) : null })
 
   try {
     setStep('composing')
     const asset = name || AngelMint.randomNumericAsset()
     const { inputs_set } = await spendableInputs(source)
     const common = {
-      asset, quantity, divisible: String(divisible), lock: 'false',
+      asset, quantity, divisible: String(divisible), lock: String(lock),
       sat_per_vbyte: String(rate), verbose: 'true',
       inputs_set, exclude_utxos_with_balances: 'true',
     }
