@@ -343,7 +343,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.9.1'
+const VERSION = '0.9.2'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -383,6 +383,14 @@ const state = {
   error: null,
 }
 const explorer = () => EXPLORERS[state.network] || EXPLORERS.mainnet
+
+// Counterparty Core v11.5 (mainnet block 969,320) ignores a taproot reveal
+// unless the source address's own key signs it (`require_reveal_source_signature`).
+// This page still signs the reveal with a key of its own, so on mainnet the
+// asset is never issued and the name stays free for anyone. Off until the mint
+// signs reveals with the wallet; plain issuances are unaffected.
+const TAPROOT_MINT_OFF = { mainnet: true }
+const taprootMintOff = () => !!TAPROOT_MINT_OFF[state.network]
 
 // ---------------------------------------------------------------------------
 // Activity + error reporting. Every notable thing a visitor does, and every
@@ -1077,7 +1085,7 @@ async function mint() {
   const rate = currentRate()
   const reinscribe = state.assetMode === 'reinscribe'
   const flow = noCounterEl.checked && !reinscribe ? 'plain' : 'counter'
-  if (!rate || assetProblem() || (flow === 'counter' && (!state.file || !isSegwit(source)))) return
+  if (!rate || assetProblem() || (flow === 'counter' && (!state.file || !isSegwit(source) || taprootMintOff()))) return
   const name = assetName()
   const existing = name ? rightsFor(name).info : null
   // A reinscription is a reissuance: quantity 0 and the asset's own
@@ -1331,6 +1339,7 @@ function renderAction() {
     : assetProblem() ? `Asset name: ${assetProblem()} (step 2)`
     : !reinscribe && supplyRaw() === null ? 'Supply must be a whole number (step 2).'
     : xcpNeeded && Number.isFinite(xcpHave) && xcpHave < xcpNeeded ? `A named asset burns ${xcpNeeded} XCP and this address has ${fmtAmt(xcpHave)}.`
+    : counter && taprootMintOff() ? `Counters and reinscriptions are paused on ${escapeHtml(state.network)}: Counterparty v11.5 ignores reveals not signed by your own address, and this page cannot ask your wallet for that yet. ${reinscribe ? '' : 'Tick "Without counter" in step 2 for a plain issuance.'}`
     : counter && !isSegwit(state.wallet.address) ? `Counters need a segwit address (bc1…) — Counterparty refuses the taproot envelope from a legacy one. Switch your wallet to a segwit or taproot account${reinscribe ? '' : ', or tick "Without counter" for a plain issuance'}.`
     : counter && !state.file ? (reinscribe ? 'Choose the new file (step 3).' : 'Choose a file (step 3), or tick "Without counter" in step 2.')
     : !rate ? 'Enter a custom fee rate (step 4), at least 0.1 sat/vB.'
