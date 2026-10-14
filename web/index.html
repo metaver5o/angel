@@ -343,7 +343,7 @@
 // Bump VERSION by hand on each release. BUILD_COMMIT is replaced with the short
 // git SHA by the GitHub Pages workflow; when served raw it stays a placeholder.
 // ---------------------------------------------------------------------------
-const VERSION = '0.9.2'
+const VERSION = '0.10.0'
 const BUILD_COMMIT = '__COMMIT__'
 const REPO_URL = 'https://github.com/metaver5o/angel'
 
@@ -386,9 +386,10 @@ const explorer = () => EXPLORERS[state.network] || EXPLORERS.mainnet
 
 // Counterparty Core v11.5 (mainnet block 969,320) ignores a taproot reveal
 // unless the source address's own key signs it (`require_reveal_source_signature`).
-// This page still signs the reveal with a key of its own, so on mainnet the
-// asset is never issued and the name stays free for anyone. Off until the mint
-// signs reveals with the wallet; plain issuances are unaffected.
+// Before v0.10 this page signed the reveal with a key of its own, so every
+// mainnet counter since that block issued nothing. The wallet signs it now;
+// mainnet stays off until that is proven with each wallet on mainnet
+// (regtest/signet/testnet are on). Plain issuances are unaffected.
 const TAPROOT_MINT_OFF = { mainnet: true }
 const taprootMintOff = () => !!TAPROOT_MINT_OFF[state.network]
 
@@ -421,10 +422,17 @@ window.addEventListener('error', (e) => trackError('window', e.error || e.messag
 window.addEventListener('unhandledrejection', (e) => trackError('promise', e.reason))
 
 // ---------------------------------------------------------------------------
-// Wallets — the two that speak Counterparty. Both sign the commit as a PSBT and
-// that is all they are asked: the reveal is signed by the page (see
-// src/mint.js). `signCommit` receives the PSBT hex, {address: [input indices]}
-// and the single payment it makes.
+// Wallets — the two that speak Counterparty. Each signs both halves of a
+// counter mint with the address's own key: the commit (key path) and the
+// reveal (script path through Core's envelope, which Counterparty v11.5
+// requires; see src/mint.js). Nothing is broadcast until both are signed and
+// the reveal's signature verifies.
+//
+//   pubkey()            the address's public key, sent to Core as
+//                       `multisig_pubkey` so the envelope is closed by it
+//   revealSupport()     null when it can sign the reveal, else why not
+//   signMint(c, r, si)  sign commit PSBT `c` (inputs `si`) and reveal PSBT `r`
+//                       -> [signedCommitPsbt, signedRevealPsbt]
 // ---------------------------------------------------------------------------
 const horizonProvider = () => window.HorizonWalletProvider
   || (window.btc_providers?.some(p => p.id === 'HorizonWalletProvider') ? window.HorizonWalletProvider : null)
@@ -444,22 +452,32 @@ const WALLETS = {
       return Array.isArray(r) ? r[0] || null : null
     },
     async disconnect() { try { await window.xcpwallet.request({ method: 'xcp_disconnect' }) } catch {} },
-    // XCP Wallet refuses BTC movement it cannot account for. A commit carries
-    // no Counterparty message, so it is declared as the payment it is: the
-    // wallet checks every non-change output against this, to the satoshi.
-    // It also insists on explicit signInputs and SIGHASH_ALL for every index.
-    async signCommit(hex, signInputs, pay) {
-      const indices = Object.values(signInputs).flat()
-      const r = await window.xcpwallet.request({ method: 'xcp_signBitcoinPsbt', params: [{
-        hex, signInputs,
-        sighashTypes: new Array(Math.max(0, ...indices) + 1).fill(1),
-        intent: {
-          standard: 'xcp-wallet/bitcoin-payment', version: 1, action: 'pay',
-          outputs: [{ address: pay.address, amountSats: pay.valueSats }],
-          description: `Counter commit for ${pay.asset}`.slice(0, 120),
-        },
-      }] })
-      return r?.hex
+    async info() {
+      const r = await window.xcpwallet.request({ method: 'xcp_getAddresses' })
+      return { publicKey: r?.active?.publicKey || null, bundles: r?.signing?.psbtBatch?.marketplaceBundles || [] }
+    },
+    async pubkey() { return (await this.info()).publicKey },
+    // The wallet advertises `commit-and-reveal` only for a software wallet on a
+    // P2WPKH or P2TR address whose Counterparty API is v11.5+ (PROVIDER.md).
+    async revealSupport() {
+      const { bundles } = await this.info()
+      return bundles.includes('commit-and-reveal') ? null
+        : 'This XCP Wallet account cannot sign a Counterparty reveal (it needs a software wallet on a bc1q/bc1p address, a Counterparty API v11.5+, and a wallet version that offers the commit-and-reveal bundle). Update XCP Wallet or switch account; hardware wallets cannot sign it.'
+    },
+    // One approval for both: `xcp_signPsbts` with a `commit-and-reveal` bundle.
+    // The wallet re-proves the v11.5 rule itself and signs the reveal with the
+    // address's key (SIGHASH_DEFAULT); the commit is SIGHASH_ALL throughout.
+    async signMint(commitHex, revealHex, signInputs) {
+      const [address] = Object.keys(signInputs)
+      const n = signInputs[address].length
+      const r = await window.xcpwallet.request({ method: 'xcp_signPsbts', params: [{ requests: [
+        { hex: commitHex, signInputs, sighashTypes: new Array(n).fill(1),
+          intent: { standard: 'counterparty-reveal', version: 1, action: 'fund_commit' } },
+        { hex: revealHex, signInputs: { [address]: [0] }, sighashTypes: [0],
+          intent: { standard: 'counterparty-reveal', version: 1, action: 'sign_reveal' } },
+      ] }] })
+      if (!Array.isArray(r?.hexes) || r.hexes.length !== 2) throw new Error('XCP Wallet returned no signed commit and reveal.')
+      return r.hexes
     },
     // A plain issuance carries a Counterparty message the wallet reads itself
     // (it decrypts the OP_RETURN), so it goes through the ordinary door.
@@ -475,7 +493,9 @@ const WALLETS = {
     async connect() {
       const { result } = await horizonProvider().request('getAddresses')
       const list = result?.addresses || []
-      return (list.find(a => a.type === 'p2tr') || list[0])?.address || null
+      const pick = list.find(a => a.type === 'p2tr') || list[0]
+      this.keys = Object.fromEntries(list.filter(a => a.publicKey).map(a => [a.address, a.publicKey]))
+      return pick?.address || null
     },
     async silent() {
       const res = await horizonProvider().request('wallet_getAccount', { addresses: [] })
@@ -483,12 +503,31 @@ const WALLETS = {
       return (list.find(a => a.addressType === 'p2tr') || list[0])?.address || null
     },
     async disconnect() { try { await horizonProvider().request('wallet_disconnect', {}) } catch {} },
-    async signCommit(hex, signInputs) {
+    // `getAddresses` returns each address's publicKey: the key of the very
+    // private key `signPsbt` signs with. A reconnect without it asks again.
+    keys: {},
+    async pubkey(address) {
+      if (!this.keys[address]) await this.connect()
+      return this.keys[address] || null
+    },
+    // Horizon signs a PSBT with bitcoinjs-lib's `signInput`: for a taproot
+    // input whose PSBT_IN_TAP_LEAF_SCRIPT contains its key, that is a script-path
+    // signature (BIP342) by the untweaked key — exactly the source key Core's
+    // envelope names when `multisig_pubkey` is that key. Two approvals.
+    async revealSupport() { return null },
+    async signMint(commitHex, revealHex, signInputs) {
+      const [address] = Object.keys(signInputs)
+      const commit = await this.signPsbt(commitHex, signInputs)
+      if (!commit) throw new Error('Horizon returned no signed commit.')
+      const { result } = await horizonProvider().request('signPsbt', { hex: revealHex, signInputs: { [address]: [0] }, sighashTypes: [0] })
+      if (!result?.hex) throw new Error('Horizon returned no signed reveal.')
+      return [commit, result.hex]
+    },
+    async signPsbt(hex, signInputs) {
       // The house API; sighashTypes is a whitelist, and the PSBT asks for ALL.
       const { result } = await horizonProvider().request('signPsbt', { hex, signInputs, sighashTypes: [0, 1] })
       return result?.hex
     },
-    signPsbt(hex, signInputs) { return this.signCommit(hex, signInputs) },
   },
 }
 const WALLET_ORDER = ['xcp', 'horizon']
@@ -552,7 +591,7 @@ async function spendableInputs(address) {
     cpJson(`/addresses/${encodeURIComponent(address)}/balances?type=utxo`).catch(() => []),
   ])
   const carrying = new Set((attached || []).map(b => b.utxo).filter(Boolean))
-  const spk = AngelMint.addressScript(address)
+  const spk = AngelMint.addressScript(address, state.network)
   const ok = utxos
     .filter(u => u.value > DUST_GUARD && !carrying.has(`${u.txid}:${u.vout}`))
     .sort((a, b) => b.value - a.value)
@@ -1068,11 +1107,12 @@ customEl.addEventListener('input', renderFeeSummary)
 // ---------------------------------------------------------------------------
 // Mint.
 //
-// With a file: compose -> wallet signs commit -> broadcast -> page signs reveal
-// -> broadcast. The reveal PSBT and its key are saved to localStorage BEFORE
-// the commit goes out, so a mint interrupted after that point can always be
-// finished (see renderPending). Nothing is unrecoverable once the commit is on
-// chain.
+// With a file: compose (with the wallet's pubkey) -> preflight the reveal
+// against Counterparty v11.5's rule -> wallet signs commit AND reveal ->
+// verify the reveal's signature -> save both -> broadcast commit, then reveal.
+// If any check fails nothing is broadcast. Both signed transactions are saved
+// to localStorage BEFORE the commit goes out, so a mint interrupted after that
+// point is finished by re-sending them (see renderPending); no key is kept.
 //
 // Without a file: a plain issuance — one Counterparty transaction the wallet
 // signs and the page relays.
@@ -1132,29 +1172,35 @@ async function mint() {
       return
     }
 
+    const unsupported = await w.revealSupport()
+    if (unsupported) throw new Error(unsupported)
+    const pubkey = await w.pubkey(source)
+    if (!pubkey) throw new Error('The wallet did not report this address\'s public key, which Counterparty needs to close the envelope with your key. Nothing was signed.')
+
     const bytes = new Uint8Array(await state.file.arrayBuffer())
     const mime = AngelMint.guessContentType(state.file)
     const compose = await cpCompose(source, 'issuance', {
       ...common, description: AngelMint.encodeContent(bytes, mime), mime_type: mime,
-      encoding: 'taproot', inscription: 'false',
+      encoding: 'taproot', inscription: 'false', multisig_pubkey: pubkey,
     })
 
-    const revealKey = AngelMint.newRevealKey()
-    const plan = AngelMint.planMint(compose, revealKey, rate)
+    // Refuses (nothing signed) unless Counterparty v11.5 will attribute the reveal to `source`.
+    const plan = AngelMint.planMint(compose, source, pubkey, state.network)
     state.cost = { commitFee: plan.commitFee, revealFee: plan.revealFee, total: plan.commitFee + plan.revealFee }
-    track('composed', { flow, asset, commitFee: plan.commitFee, revealFee: plan.revealFee, revealWeight: plan.revealWeight, inputs: plan.inputCount, commitAddress: plan.commit.address })
+    track('composed', { flow, asset, commitFee: plan.commitFee, revealFee: plan.revealFee, revealWeight: plan.revealWeight, inputs: plan.inputCount, commitTxid: plan.commitTxid })
 
     setStep('signing-commit')
     const signInputs = { [source]: Array.from({ length: plan.inputCount }, (_, i) => i) }
-    const signed = await w.signCommit(plan.commitPsbt, signInputs, { address: plan.commit.address, valueSats: plan.commitValue, asset })
-    if (!signed) throw new Error('The wallet returned no signed PSBT.')
-    const commit = AngelMint.finalize(signed)
-    track('commit_signed', { asset, txid: commit.txid })
+    const [signedCommit, signedReveal] = await w.signMint(plan.commitPsbt, plan.revealPsbt, signInputs)
+    const commit = AngelMint.finalize(signedCommit)
+    const reveal = AngelMint.finalize(signedReveal)
+    // The last gate: the reveal is Core's, through the envelope, and its signature verifies.
+    AngelMint.verifySignedReveal(compose, plan.checked, commit.hex, reveal.hex)
+    track('commit_signed', { asset, txid: commit.txid, revealTxid: reveal.txid })
 
-    const revealPsbt = AngelMint.buildRevealPsbt(compose, commit.txid, plan.commitIndex, plan.commitValue, plan.commit)
     const pending = {
-      asset, source, network: state.network, commitTxid: commit.txid, revealPsbt,
-      revealKey: AngelMint.bytesToHex(revealKey.privateKey), at: Date.now(),
+      v: 2, asset, source, network: state.network,
+      commitTxid: commit.txid, commitHex: commit.hex, revealTxid: reveal.txid, revealHex: reveal.hex, at: Date.now(),
     }
     localStorage.setItem(PENDING_KEY, JSON.stringify(pending))
 
@@ -1171,14 +1217,14 @@ async function mint() {
   }
 }
 
-/** Sign the reveal here and relay it. Separate so an interrupted mint can resume. */
+/**
+ * Relay the already-signed reveal (and the commit again, in case it never got
+ * out). Separate so an interrupted mint can resume; both are signed by now.
+ */
 async function finishReveal(pending) {
-  setStep('signing-reveal')
-  const key = AngelMint.revealKeyFromHex(pending.revealKey)
-  const reveal = AngelMint.finalize(AngelMint.signRevealLocally(pending.revealPsbt, key.privateKey))
-
   setStep('broadcasting-reveal')
-  const txid = await broadcast(reveal.hex)
+  await broadcast(pending.commitHex)
+  const txid = await broadcast(pending.revealHex)
   if (!(await explorerKnows(txid)))
     throw new Error(`The relay accepted the reveal (${txid}) but no mempool has seen it. The commit is untouched — use Finish reveal to send it again.`)
 
@@ -1193,6 +1239,8 @@ async function finishReveal(pending) {
 function loadPending() {
   try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null') } catch { return null }
 }
+/** A mint from before v0.10, whose reveal was signed with a page-held key: v11.5 ignores it. */
+const isLegacyPending = (p) => !!p && !p.revealHex && !!p.revealKey
 function setStep(s) { state.step = s; renderAction() }
 
 // ---------------------------------------------------------------------------
@@ -1239,11 +1287,30 @@ function renderPending() {
   const busy = !['idle', 'error', 'done'].includes(state.step)
   if (!p || busy) { el.hidden = true; el.innerHTML = ''; return }
   el.hidden = false
+  const commitLink = `<a href="${explorer()}/tx/${escapeHtml(p.commitTxid)}" target="_blank" rel="noopener">${escapeHtml(p.commitTxid.slice(0, 12))}…</a>`
+  if (isLegacyPending(p)) {
+    // Signed with a page-held key: Counterparty v11.5 ignores that reveal, so
+    // there is nothing to finish. The key is shown once so the commit's BTC is
+    // not silently forgotten; nothing here signs with it.
+    el.innerHTML = `
+      <div class="alert warn">
+        <b>Old unfinished mint.</b> The commit for <code>${escapeHtml(p.asset)}</code> (${commitLink}) was made
+        by an earlier version of this page, which signed reveals with its own key. Counterparty v11.5 ignores
+        such reveals, so it cannot issue the asset. Mint it again. Keep this key only if you want to recover the commit's BTC with your own tools:
+        <code style="word-break:break-all">${escapeHtml(p.revealKey)}</code>
+      </div>
+      <button class="btn quiet" id="discardPending">Discard (forget this mint)</button>`
+    el.querySelector('#discardPending').onclick = () => {
+      if (!confirm('Forget this mint? Copy the key above first if you want it; it is not stored anywhere else.')) return
+      track('pending_discarded', { asset: p.asset, commitTxid: p.commitTxid, legacy: true })
+      localStorage.removeItem(PENDING_KEY); renderPending(); renderAction()
+    }
+    return
+  }
   el.innerHTML = `
     <div class="alert warn">
-      <b>Unfinished mint.</b> The commit for <code>${escapeHtml(p.asset)}</code> was broadcast
-      (<a href="${explorer()}/tx/${escapeHtml(p.commitTxid)}" target="_blank" rel="noopener">${escapeHtml(p.commitTxid.slice(0, 12))}…</a>)
-      but the reveal was not. Nothing is lost: the reveal key is saved in this browser.
+      <b>Unfinished mint.</b> The commit for <code>${escapeHtml(p.asset)}</code> (${commitLink}) and its reveal
+      are signed, but the reveal was not confirmed sent. Nothing is lost: both are saved in this browser.
     </div>
     <button class="btn primary" id="finish">Finish reveal</button>
     <button class="btn quiet" id="discardPending">Discard (forget this mint)</button>`
@@ -1254,7 +1321,7 @@ function renderPending() {
     catch (e) { trackError('finish_reveal', e, { asset: p.asset, commitTxid: p.commitTxid }); state.error = e?.message || String(e); setStep('error'); renderPending() }
   }
   el.querySelector('#discardPending').onclick = () => {
-    if (!confirm('Forget this mint? The commit output can only be spent with the key saved here. Copy the reveal key first if you might want it:\n\n' + p.revealKey)) return
+    if (!confirm('Forget this mint? If the commit is already on chain, its BTC can then only be spent by sending this exact reveal, which is not stored anywhere else.')) return
     track('pending_discarded', { asset: p.asset, commitTxid: p.commitTxid })
     localStorage.removeItem(PENDING_KEY); renderPending(); renderAction()
   }
@@ -1266,9 +1333,8 @@ function renderPending() {
 const STEPS = {
   counter: [
     ['composing', 'Compose with Counterparty'],
-    ['signing-commit', 'Sign the commit — approve in your wallet'],
+    ['signing-commit', 'Sign the commit and the reveal — approve in your wallet'],
     ['broadcasting-commit', 'Broadcast the commit'],
-    ['signing-reveal', 'Sign the reveal (here, no wallet needed)'],
     ['broadcasting-reveal', 'Broadcast the reveal'],
   ],
   plain: [
@@ -1339,7 +1405,7 @@ function renderAction() {
     : assetProblem() ? `Asset name: ${assetProblem()} (step 2)`
     : !reinscribe && supplyRaw() === null ? 'Supply must be a whole number (step 2).'
     : xcpNeeded && Number.isFinite(xcpHave) && xcpHave < xcpNeeded ? `A named asset burns ${xcpNeeded} XCP and this address has ${fmtAmt(xcpHave)}.`
-    : counter && taprootMintOff() ? `Counters and reinscriptions are paused on ${escapeHtml(state.network)}: Counterparty v11.5 ignores reveals not signed by your own address, and this page cannot ask your wallet for that yet. ${reinscribe ? '' : 'Tick "Without counter" in step 2 for a plain issuance.'}`
+    : counter && taprootMintOff() ? `Counters and reinscriptions are paused on ${escapeHtml(state.network)}: Counterparty v11.5 ignores reveals not signed by your own address, and wallet-signed reveals are still being verified here. ${reinscribe ? '' : 'Tick "Without counter" in step 2 for a plain issuance.'}`
     : counter && !isSegwit(state.wallet.address) ? `Counters need a segwit address (bc1…) — Counterparty refuses the taproot envelope from a legacy one. Switch your wallet to a segwit or taproot account${reinscribe ? '' : ', or tick "Without counter" for a plain issuance'}.`
     : counter && !state.file ? (reinscribe ? 'Choose the new file (step 3).' : 'Choose a file (step 3), or tick "Without counter" in step 2.')
     : !rate ? 'Enter a custom fee rate (step 4), at least 0.1 sat/vB.'
@@ -1352,7 +1418,7 @@ function renderAction() {
     </div>` : ''}
     <button class="btn primary" id="go" ${blocked ? 'disabled' : ''}>${reinscribe ? 'Reinscribe' : counter ? 'Mint Counter' : 'Issue asset (no counter)'}</button>
     ${blocked ? `<p class="note">${blocked}</p>` : `<p class="note">${counter
-      ? 'Exact fees are shown once composed. Your wallet signs one payment (the commit); the page signs the reveal.'
+      ? 'Exact fees are shown once composed. Your wallet signs both the commit and the reveal with this address\'s key, as Counterparty requires.'
       : 'One Counterparty issuance, signed by your wallet. No file, no commit/reveal.'}</p>`}`
   const go = el.querySelector('#go'); if (go) go.onclick = mint
 }

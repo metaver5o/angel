@@ -6,8 +6,17 @@ whose description is your file, carried in Core's v11 taproot envelope and
 numbered by the chain.
 
 The mint is client-side. Counterparty Core composes the commit/reveal pair,
-the wallet signs the commit as a PSBT, and the page signs the reveal. There is
+and the connected wallet signs **both** with the address's own key. There is
 no mint backend; the only server piece is a proxy to a Counterparty node.
+
+> **Counterparty v11.5 rule.** Since mainnet block 969,320
+> (`require_reveal_source_signature`, GHSA-q27c-r246-f6qw) a taproot reveal is
+> attributed to the commit's funder only if the source signed it. Otherwise it
+> is ignored silently: no asset, no error, and the name stays free. Angel
+> v0.9.x signed reveals with a page-held key, so its mainnet counters after
+> that block issued nothing. v0.10 has the wallet sign them. The counter path
+> stays **off on mainnet** (`TAPROOT_MINT_OFF` in `web/index.html`) until that
+> has been checked with each wallet on mainnet.
 
 ## Where it runs
 
@@ -69,30 +78,30 @@ rate; the exact figures from Core replace it once composed.
 1. **Compose.** The page lists the address's coins (mempool.space), drops any at
    or under 1,000 sats or carrying an attached asset balance, and asks Core to
    compose an `issuance` with `encoding=taproot`, `inscription=false`, the file
-   as `description` and those coins as `inputs_set`. Core returns the unsigned
-   commit, the envelope script and the unsigned reveal.
-2. **Re-key.** The envelope leaf's key is swapped for one made for this mint
-   (same length, so Core's fee math still holds), and the commit's internal key
-   becomes the NUMS point. The commit output is then spendable only through the
-   leaf, only with that key.
-3. **Sign the commit.** The commit is rebuilt as a PSBT with full prevouts and
-   `SIGHASH_ALL` and handed to the wallet. For XCP Wallet it is declared as a
-   plain payment (`xcp_signBitcoinPsbt` + payment intent); Horizon signs it as
-   an ordinary PSBT.
-4. **Save, then broadcast.** The reveal PSBT and its key go to `localStorage`
-   *before* the commit is relayed. An interrupted mint shows an "Unfinished
-   mint" box with a **Finish reveal** button; nothing is lost once the commit is
-   on chain.
-5. **Sign and broadcast the reveal.** The page signs the script-path spend and
-   relays it (your node first, then mempool.space), then checks a mempool has
-   actually seen it before calling the mint done.
-
-Why the page signs the reveal rather than the wallet: neither wallet will sign
-a script-path spend of a native Counterparty envelope — it is BTC movement
-they cannot explain. Core's own flow does the same thing (an ephemeral key per
-mint); the difference is this one is kept until the reveal lands. Before
-anything is signed the page also checks that Core built the native envelope
-it asked for, and refuses otherwise.
+   as `description` and those coins as `inputs_set`. It also sends the
+   wallet's public key as `multisig_pubkey`, so Core closes the envelope with
+   that key. Core returns the unsigned commit, the
+   envelope script, the control block and the unsigned reveal.
+2. **Preflight** (`preflightReveal` in `src/mint.js`, a port of Core's
+   `counterparty-rs/src/reveal.rs`). Before anything is signed, the page checks:
+   - the leaf is exactly `OP_FALSE OP_IF <pushes> OP_ENDIF <32-byte key> OP_CHECKSIG`;
+   - its key is a key of the source address (a P2WPKH address's pubkey, or a
+     P2TR address's output key or BIP86 internal key) and is the key the wallet reported;
+   - the control block is leaf version `0xc0` and, with the leaf hash, rebuilds
+     the commit output;
+   - that output is commit output 0, and the reveal spends it alone.
+   If any check fails, nothing is signed.
+3. **Sign both.** The commit is Core's transaction as a PSBT, with full prevouts
+   and `SIGHASH_ALL`. The reveal is a PSBT whose single input is a tapscript spend
+   of commit output 0: witness UTXO = that output, `PSBT_IN_TAP_LEAF_SCRIPT` =
+   Core's envelope and control block. The wallet signs the reveal with the
+   source key (BIP342 script path, `SIGHASH_DEFAULT`).
+4. **Verify, save, broadcast.** The page checks that the finalized reveal's
+   witness is `<signature> <envelope> <control block>` and that the signature
+   verifies against the leaf key over the reveal's sighash. Only then are both
+   signed transactions saved to `localStorage`, the commit relayed, and then the
+   reveal. An interrupted mint shows an "Unfinished mint" box whose **Finish
+   reveal** re-sends them. No key is ever held by the page.
 
 Limits: a reveal over 400,000 weight units (a file of roughly 390 KB) will not
 relay on the public network, so it is refused before anything is signed.
@@ -101,10 +110,12 @@ relay on the public network, so it is refused before anything is signed.
 
 The two Counterparty browser wallets:
 
-| Wallet | Global | Commit signing |
-| --- | --- | --- |
-| XCP Wallet | `window.xcpwallet` | `xcp_signBitcoinPsbt` with a payment intent |
-| Horizon | `window.HorizonWalletProvider` | house `signPsbt` |
+| Wallet | Global | Pubkey | Commit + reveal |
+| --- | --- | --- | --- |
+| XCP Wallet | `window.xcpwallet` | `xcp_getAddresses` → `active.publicKey` | one approval: `xcp_signPsbts` with a `commit-and-reveal` bundle (needs `commit-and-reveal` in `signing.psbtBatch.marketplaceBundles`: a software wallet on a bc1q/bc1p address, Counterparty API v11.5+; hardware wallets are blocked) |
+| Horizon | `window.HorizonWalletProvider` | `getAddresses` → `publicKey` | two approvals: `signPsbt` for each. Horizon signs with bitcoinjs-lib `signInput`, which gives a script-path signature when the signer's key is in the leaf |
+
+A wallet that cannot sign the reveal is refused before compose, with the reason.
 
 On connect the page shows the address, the **BTC balance** (mempool.space,
 confirmed + unconfirmed) and the **XCP balance** (Counterparty API).
@@ -157,7 +168,7 @@ Services (`docker-compose.yml`):
   hostname hardcoded as `TUNNEL_BACKEND` in `web/index.html` — update it when
   the tunnel restarts.
 
-Your node needs Counterparty Core **v11+** (taproot envelopes) with its
+Your node needs Counterparty Core **v11.5+** (it returns the unsigned reveal the wallet signs) with its
 bitcoind, on the network you want to mint on; the page reads the network from
 the node. Note the deployer hard-resets the checkout: don't develop in the
 clone the stack runs from.
@@ -171,7 +182,20 @@ Pages and the stack serve it as-is:
 ```bash
 npm install
 npm run build        # src/mint.js -> web/mint.js
+npm test             # preflight unit tests (node --test)
 ```
+
+End to end against a Counterparty Core v11.5 regtest node (the rule is active
+from block 0), minting from P2WPKH and P2TR sources with each wallet's signing
+library, plus a pre-0.10 reveal the node must ignore:
+
+```bash
+CP=http://localhost:24000/v2 BTC_CLI="bitcoin-cli -regtest" node scripts/regtest-e2e.js
+```
+
+**Don't develop in the clone the stack runs from.** The deployer resets it to
+`origin/main` every 60 s and the proxy serves its `web/` live. Use a separate
+`git worktree`.
 
 To point the page at a different stack: `web/index.html?backend=https://host`.
 
