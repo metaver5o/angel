@@ -3,12 +3,18 @@
   "private": true,
   "description": "Angel — Guardian Set mint. Single page; `npm run build` bundles web/mint.js from src/.",
   "scripts": {
-    "build": "esbuild src/mint.js --bundle --format=iife --global-name=AngelMint --target=es2022 --minify --outfile=web/mint.js"
+    "build": "esbuild src/mint.js --bundle --format=iife --global-name=AngelMint --target=es2022 --minify --outfile=web/mint.js",
+    "test": "node --test test/*.test.js"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "bitcoinjs-lib": "^6.1.7",
+    "ecpair": "^2.1.0",
+    "esbuild": "^0.28.2",
+    "tiny-secp256k1": "^2.2.3"
   },
   "dependencies": {
+    "@noble/curves": "2.4.0",
     "@scure/btc-signer": "^2.4.1"
-  }
+  },
+  "type": "module"
 }
