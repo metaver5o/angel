@@ -4,24 +4,26 @@
  * The protocol is Counterparty's: a counter is an asset whose *description is
  * the file*, carried in Core's native v11 taproot envelope. Core composes the
  * pair — a commit paying a taproot output whose leaf holds the file, and a
- * reveal that spends it through that leaf and issues the asset — keyed to the
- * source's own key. A browser wallet cannot be asked to open that: XCP Wallet
- * only reads ord-style envelopes, and none of the four wallets will sign a
- * script-path spend it cannot explain. So the leaf is re-keyed to a key made
- * for this one mint, held by the page:
+ * reveal that spends it through that leaf and issues the asset.
  *
- *   - the commit becomes a plain payment to an address, which every wallet can
- *     approve (XCP Wallet through its declared-payment door);
- *   - the reveal is signed here, with that key, and no wallet is involved;
+ * Since Core 11.5 (`require_reveal_source_signature`, mainnet block 969,320) a
+ * reveal counts only when the leaf is closed by a key of the source address and
+ * the reveal is signed with it (CounterpartyXCP/counterparty-core#3536). So the
+ * leaf is Core's, untouched, and the wallet signs both transactions:
+ *
  *   - the commit's internal key is the NUMS point, so the file's output can
- *     only ever be spent through the leaf.
+ *     only ever be spent through the leaf — by the source key;
+ *   - the reveal is built and signed before the commit is broadcast, so no
+ *     commit goes out without a reveal that Counterparty will read.
  *
  * Ported from counters.fun (apps/web/src/lib/inscribe), trimmed to this one
- * path and adapted to Core 11.5's compose output (`reveal_rawtransaction`,
- * unsigned), with the pre-11.5 `signed_reveal_rawtransaction` still accepted.
+ * path. A pre-11.5 compose (`signed_reveal_rawtransaction`, a throwaway key) is
+ * refused: its reveal is ignored by the network.
  */
 
 import { Address, OutScript, RawTx, SigHash, Transaction, p2tr, taprootNumsKey, utils as btcUtils } from '@scure/btc-signer'
+import { tapLeafHash } from '@scure/btc-signer/payment.js'
+import { schnorr } from '@noble/curves/secp256k1.js'
 
 export const LEAF_VERSION = 0xc0
 /** Past this the public network will not relay the reveal at any fee rate. */
@@ -114,15 +116,10 @@ export function addressScript(address) {
 // keys
 // ---------------------------------------------------------------------------
 /**
- * A key for the leaf that belongs to this mint alone. The page holds it, so the
- * page can sign the reveal with no wallet dialog, and the commit becomes a plain
- * payment any wallet can approve. Kept with the pending mint until the reveal
- * is on chain, so a failed broadcast is still recoverable.
+ * The throwaway reveal key of a mint started before source-signed reveals.
+ * Only for finishing such a mint from localStorage: its reveal moves the
+ * committed BTC on, but Counterparty ignores it.
  */
-export function newRevealKey() {
-  const privateKey = btcUtils.randomPrivateKeyBytes()
-  return { privateKey, xOnly: btcUtils.pubSchnorr(privateKey) }
-}
 export function revealKeyFromHex(hex) {
   const privateKey = hexToBytes(hex)
   if (privateKey.length !== 32) throw new Error('a reveal key is 32 bytes')
@@ -146,14 +143,8 @@ function leafKey(script) {
   return script.subarray(at + 1, at + 33)
 }
 
-/** Same script, different key. Length is unchanged, so Core's fee arithmetic still holds. */
-export function reKeyEnvelope(script, xOnly) {
-  if (xOnly.length !== 32) throw new Error(`expected a 32-byte x-only key, got ${xOnly.length}`)
-  leafKey(script) // validates the shape
-  const leaf = new Uint8Array(script)
-  leaf.set(xOnly, script.length - 33)
-  return leaf
-}
+/** The x-only key the leaf closes with, hex. Core 11.5 closes it with a key of the source. */
+export function envelopeKey(script) { return bytesToHex(leafKey(script)) }
 
 /**
  * The commit output for a leaf: a single-leaf taproot tree under the NUMS
@@ -177,9 +168,10 @@ function coreCommitScript(compose) {
 }
 
 function coreRevealRaw(compose) {
-  const hex = compose.reveal_rawtransaction || compose.signed_reveal_rawtransaction
-  if (!hex) throw new Error('Core returned no reveal. The node must be v11+ with taproot envelopes enabled.')
-  return RawTx.decode(hexToBytes(hex))
+  if (!compose.reveal_rawtransaction && compose.signed_reveal_rawtransaction)
+    throw new Error('This Counterparty node is older than v11.5 and signed the reveal with a throwaway key, which the network now ignores. Nothing was signed.')
+  if (!compose.reveal_rawtransaction) throw new Error('Core returned no reveal. The node must be v11.5+ with taproot envelopes enabled.')
+  return RawTx.decode(hexToBytes(compose.reveal_rawtransaction))
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +318,7 @@ export function finalize(signedPsbtHex) {
   return { hex: bytesToHex(tx.extract()), txid: tx.id, weight: tx.weight }
 }
 
-/** Sign the reveal here, with the key the leaf names. Same spend the wallet would make. */
+/** Sign a pre-11.5 pending reveal with its throwaway key (see revealKeyFromHex). */
 export function signRevealLocally(revealPsbt, privateKey) {
   const tx = fromPsbt(revealPsbt)
   let signed = false
@@ -341,6 +333,24 @@ export function signRevealLocally(revealPsbt, privateKey) {
   return bytesToHex(tx.toPSBT())
 }
 
+/**
+ * Check the wallet's reveal before anything is broadcast: input 0 carries a
+ * signature by the key the leaf closes with, over this leaf, that verifies.
+ * Otherwise the reveal would be rejected or, worse, ignored by Counterparty.
+ */
+export function checkRevealSigned(revealPsbtHex, leaf) {
+  const tx = fromPsbt(revealPsbtHex)
+  const input = tx.getInput(0)
+  const key = leafKey(leaf), leafHash = tapLeafHash(leaf, LEAF_VERSION)
+  const entry = (input.tapScriptSig || []).find(([k]) => sameBytes(k.pubKey, key) && sameBytes(k.leafHash, leafHash))
+  if (!entry) throw new Error('The wallet did not sign the reveal with the key of your address. Nothing was broadcast.')
+  const sig = entry[1]
+  const hashType = sig.length === 65 ? sig[64] : SigHash.DEFAULT
+  if (sig.length !== 64 && sig.length !== 65) throw new Error('The wallet returned a malformed reveal signature. Nothing was broadcast.')
+  const msg = tx.preimageWitnessV1(0, [input.witnessUtxo.script], hashType, [input.witnessUtxo.amount], undefined, leaf, LEAF_VERSION)
+  if (!schnorr.verify(sig.subarray(0, 64), msg, key)) throw new Error('The reveal signature does not verify. Nothing was broadcast.')
+}
+
 /** A script-path spend's txid excludes the witness, so this is exact before signing. */
 export function unsignedTxid(psbtHex) { return fromPsbt(psbtHex).id }
 
@@ -353,22 +363,27 @@ export function txidOf(rawHex) {
 // plan: everything the page needs from a compose, before any signing
 // ---------------------------------------------------------------------------
 /**
- * Re-key Core's envelope to `revealKey` and build the commit PSBT. The
- * envelope is Core's native one; only the key changes.
+ * Take Core's envelope as it is — closed by the source's key — and build the
+ * commit PSBT around a NUMS-keyed output for it.
  */
-export function planMint(compose, revealKey, satPerVbyte) {
-  if (!compose.envelope_script) throw new Error('Core returned no envelope. The node must be v11+ with taproot envelopes enabled.')
-  const coreLeaf = hexToBytes(compose.envelope_script)
+export function planMint(compose, satPerVbyte) {
+  if (!compose.envelope_script) throw new Error('Core returned no envelope. The node must be v11.5+ with taproot envelopes enabled.')
+  coreRevealRaw(compose) // refuses a pre-11.5 compose
+  const leaf = hexToBytes(compose.envelope_script)
   // Core applies `inscription` only to content-carrying issuances and otherwise
   // falls back silently; this app mints native counters, so check before signing.
-  if (isOrdEnvelope(coreLeaf)) throw new Error('Core built a counterparty + ord envelope, not the native one this app mints. Nothing was signed.')
-  const leaf = reKeyEnvelope(coreLeaf, revealKey.xOnly)
+  if (isOrdEnvelope(leaf)) throw new Error('Core built a counterparty + ord envelope, not the native one this app mints. Nothing was signed.')
+  if (leaf[0] !== 0x00 || leaf[1] !== 0x63) throw new Error('Core built an envelope this app does not recognise. Nothing was signed.')
+  if (compose.reveal_pubkey && envelopeKey(leaf) !== compose.reveal_pubkey.toLowerCase())
+    throw new Error('Core\'s envelope is not closed by the key it says it is. Nothing was signed.')
   const commit = commitEnvelope(leaf)
   const weight = revealWeight(compose, leaf)
   if (weight > STANDARD_WITNESS_LIMIT_WU)
     throw new Error(`This reveal would be ${weight.toLocaleString('en-US')} weight units, past the ${STANDARD_WITNESS_LIMIT_WU.toLocaleString('en-US')} standard relay cap. Use a smaller file.`)
   const topUp = commitTopUp(compose, leaf, satPerVbyte)
   const { psbt, commitValue, commitIndex } = buildCommitPsbt(compose, commit.script, topUp)
+  // The reveal spends commit:0 — Core's layout, and what the wallets check.
+  if (commitIndex !== 0) throw new Error('Core put the commit output somewhere other than output 0. Nothing was signed.')
   const revealOutputs = revealOutputTotal(compose)
   return {
     commit, commitPsbt: psbt, commitValue, commitIndex,

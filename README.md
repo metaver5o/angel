@@ -5,9 +5,10 @@ inscribe it on Bitcoin as a numbered Counter — a **native Counterparty** asset
 whose description is your file, carried in Core's v11 taproot envelope and
 numbered by the chain.
 
-The mint is client-side. Counterparty Core composes the commit/reveal pair,
-the wallet signs the commit as a PSBT, and the page signs the reveal. There is
-no mint backend; the only server piece is a proxy to a Counterparty node.
+The mint is client-side. Counterparty Core composes the commit/reveal pair and
+the wallet signs both — the reveal with your address's own key, which
+Counterparty requires since v11.5. There is no mint backend; the only server
+piece is a proxy to a Counterparty node.
 
 ## Where it runs
 
@@ -71,28 +72,37 @@ rate; the exact figures from Core replace it once composed.
    compose an `issuance` with `encoding=taproot`, `inscription=false`, the file
    as `description` and those coins as `inputs_set`. Core returns the unsigned
    commit, the envelope script and the unsigned reveal.
-2. **Re-key.** The envelope leaf's key is swapped for one made for this mint
-   (same length, so Core's fee math still holds), and the commit's internal key
-   becomes the NUMS point. The commit output is then spendable only through the
-   leaf, only with that key.
-3. **Sign the commit.** The commit is rebuilt as a PSBT with full prevouts and
-   `SIGHASH_ALL` and handed to the wallet. For XCP Wallet it is declared as a
-   plain payment (`xcp_signBitcoinPsbt` + payment intent); Horizon signs it as
-   an ordinary PSBT.
-4. **Save, then broadcast.** The reveal PSBT and its key go to `localStorage`
+2. **Keep Core's envelope.** Core 11.5 closes the envelope leaf with the
+   source address's key (the page passes the wallet's public key as
+   `multisig_pubkey`). The page leaves the leaf as it is, and only moves the
+   commit output to a NUMS internal key, so it can be spent only through the
+   leaf, by your key. A compose from a node older than v11.5 (reveal pre-signed
+   with a throwaway key) is refused.
+3. **Sign both.** The commit's txid is final before signing (every input is
+   your own segwit coin), so the reveal is built first and the wallet signs the
+   pair: XCP Wallet as one `commit-and-reveal` bundle (`xcp_signPsbts`), Horizon
+   as two approvals, reveal first. The page then checks that the reveal carries
+   a valid signature by the envelope's key, and that the signed commit has the
+   txid the reveal spends. If either check fails, nothing is broadcast.
+4. **Save, then broadcast.** Both signed transactions go to `localStorage`
    *before* the commit is relayed. An interrupted mint shows an "Unfinished
-   mint" box with a **Finish reveal** button; nothing is lost once the commit is
-   on chain.
-5. **Sign and broadcast the reveal.** The page signs the script-path spend and
-   relays it (your node first, then mempool.space), then checks a mempool has
-   actually seen it before calling the mint done.
+   mint" box with a **Finish reveal** button, which relays the commit (if it
+   is not out yet) and then the reveal.
+5. **Broadcast.** Commit, then reveal (your node first, then mempool.space);
+   the page checks a mempool has actually seen the reveal before calling the
+   mint done.
 
-Why the page signs the reveal rather than the wallet: neither wallet will sign
-a script-path spend of a native Counterparty envelope — it is BTC movement
-they cannot explain. Core's own flow does the same thing (an ephemeral key per
-mint); the difference is this one is kept until the reveal lands. Before
-anything is signed the page also checks that Core built the native envelope
-it asked for, and refuses otherwise.
+Why the wallet signs the reveal: since Counterparty Core v11.5.0
+(`require_reveal_source_signature`, mainnet block 969,320) a reveal is read
+only when its envelope is closed by a key of the address that funded the
+commit and signed with it. Reveals signed with a per-mint throwaway key — how
+this page, and counters.fun, worked before — are valid Bitcoin transactions
+that Counterparty ignores
+([counterparty-core#3536](https://github.com/CounterpartyXCP/counterparty-core/issues/3536)).
+An unfinished mint saved by an older version of this page can still be
+finished, to move its BTC out of the commit, but it does not create the asset.
+Before anything is signed the page also checks that Core built the native
+envelope it asked for, and refuses otherwise.
 
 Limits: a reveal over 400,000 weight units (a file of roughly 390 KB) will not
 relay on the public network, so it is refused before anything is signed.
@@ -101,10 +111,10 @@ relay on the public network, so it is refused before anything is signed.
 
 The two Counterparty browser wallets:
 
-| Wallet | Global | Commit signing |
+| Wallet | Global | Counter signing |
 | --- | --- | --- |
-| XCP Wallet | `window.xcpwallet` | `xcp_signBitcoinPsbt` with a payment intent |
-| Horizon | `window.HorizonWalletProvider` | house `signPsbt` |
+| XCP Wallet | `window.xcpwallet` | `xcp_signPsbts` `commit-and-reveal` bundle (needs a release that lists it in `xcp_getAddresses`; software wallet, SegWit or Taproot) |
+| Horizon | `window.HorizonWalletProvider` | house `signPsbt`, reveal then commit |
 
 On connect the page shows the address, the **BTC balance** (mempool.space,
 confirmed + unconfirmed) and the **XCP balance** (Counterparty API).
